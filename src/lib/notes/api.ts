@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { authMiddleware } from "@/lib/auth/middleware";
-import { getSql } from "@/lib/db";
+import { getSql, executeWriteBatch } from "@/lib/db";
 import type { Note } from "./types";
 import {
   loadVaultForUser,
@@ -35,11 +35,11 @@ export const loadVault = createServerFn({ method: "GET" })
 
 export const saveVaultChanges = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((input: unknown) => parseSavePayload((input ?? {}) as Record<string, unknown>))
+  .validator((input: unknown) => parseSavePayload(input))
   .handler(async ({ context, data }) => {
     try {
       const sql = await getSql();
-      return await saveVaultForUser(queryFromSql(sql), context.userId, data);
+      return await saveVaultForUser(queryFromSql(sql), context.userId, data, executeWriteBatch);
     } catch (error) {
       if (error instanceof VaultError) throw error;
       const pub = publicErrorMessage(error);

@@ -6,11 +6,14 @@ import { fileURLToPath } from "node:url";
 import { createClient } from "@libsql/client";
 import { pendingMigrations } from "../../../scripts/migration-plan.mjs";
 import {
+  buildSaveStatements,
   loadVaultForUser,
   parseSavePayload,
+  publicErrorMessage,
   saveVaultForUser,
   VAULT_LIMITS,
   VaultError,
+  type BatchFn,
   type QueryFn,
 } from "./vault-ops.ts";
 
@@ -30,6 +33,29 @@ async function memoryQuery(): Promise<QueryFn> {
     const result = await client.execute({ sql: text, args: params as never[] });
     return result.rows as never;
   };
+}
+
+async function memoryDb(): Promise<{ query: QueryFn; batch: BatchFn; client: ReturnType<typeof createClient> }> {
+  const client = createClient({ url: ":memory:" });
+  await client.execute(
+    "create table if not exists _migrations (name text primary key, applied_at integer not null)",
+  );
+  const entries = await readdir(join(root, "migrations"));
+  for (const { name } of pendingMigrations(entries, [])) {
+    const text = await readFile(join(root, "migrations", name), "utf8");
+    await client.executeMultiple(text);
+  }
+  const query: QueryFn = async (text, params = []) => {
+    const result = await client.execute({ sql: text, args: params as never[] });
+    return result.rows as never;
+  };
+  const batch: BatchFn = async (statements) => {
+    await client.batch(
+      statements.map((item) => ({ sql: item.sql, args: item.args as never[] })),
+      "write",
+    );
+  };
+  return { query, batch, client };
 }
 
 function notePayload(id: string, extra: Record<string, unknown> = {}) {
@@ -232,4 +258,128 @@ test("a newer tombstone still deletes an older live note for the same user", asy
   assert.equal(loaded.notes.length, 0);
   assert.equal(loaded.deletedIds.includes("n1"), true);
   assert.equal(loaded.deletedAt.n1, 40);
+});
+
+test("parseSavePayload rejects wrong primitive types instead of coercing them", () => {
+  assert.throws(
+    () => parseSavePayload({ notes: [{ ...notePayload("n1"), pinned: "false" }] }),
+    VaultError,
+  );
+  assert.throws(
+    () => parseSavePayload({ notes: [{ ...notePayload("n1"), pinned: 0 }] }),
+    VaultError,
+  );
+  assert.throws(
+    () => parseSavePayload({ notes: [{ ...notePayload("n1"), kind: "page" }] }),
+    VaultError,
+  );
+  assert.throws(
+    () => parseSavePayload({ notes: [{ ...notePayload("n1"), title: 12 }] }),
+    VaultError,
+  );
+  assert.throws(
+    () => parseSavePayload({ notes: [{ ...notePayload("n1"), folderId: "" }] }),
+    VaultError,
+  );
+  assert.throws(
+    () => parseSavePayload({ notes: [{ ...notePayload("n1"), createdAt: "1" }] }),
+    VaultError,
+  );
+  assert.throws(
+    () => parseSavePayload({ notes: [{ ...notePayload("n1"), updatedAt: 1.5 }] }),
+    VaultError,
+  );
+  assert.throws(
+    () => parseSavePayload({ deleted: [{ id: "n1" }] }),
+    VaultError,
+  );
+  assert.throws(
+    () => parseSavePayload({ deleted: [{ id: "n1", deletedAt: "10" }] }),
+    VaultError,
+  );
+  assert.throws(
+    () => parseSavePayload({ folders: [{ id: "f1", name: "X" }] }),
+    VaultError,
+  );
+  assert.throws(() => parseSavePayload({ notes: "[]" }), VaultError);
+  assert.throws(() => parseSavePayload(null), VaultError);
+  assert.throws(() => parseSavePayload([]), VaultError);
+});
+
+test("saveVaultForUser applies a mixed batch in one transactional call", async () => {
+  const { query, batch } = await memoryDb();
+  let calls = 0;
+  const counted: BatchFn = async (statements) => {
+    calls += 1;
+    await batch(statements);
+  };
+  await saveVaultForUser(
+    query,
+    "user-a",
+    parseSavePayload({
+      notes: [notePayload("n1"), notePayload("n2")],
+      deleted: [{ id: "n3", deletedAt: 3 }],
+      folders: [{ id: "f1", name: "Desk" }],
+      foldersUpdatedAt: 4,
+    }),
+    counted,
+  );
+  assert.equal(calls, 1);
+  const loaded = await loadVaultForUser(query, "user-a");
+  assert.equal(loaded.notes.length, 2);
+  assert.equal(loaded.deletedIds.includes("n3"), true);
+  assert.equal(loaded.folders?.[0]?.name, "Desk");
+});
+
+test("a failed statement in a batch rolls back earlier writes", async () => {
+  const { query, client } = await memoryDb();
+  const payload = parseSavePayload({
+    notes: [notePayload("n1", { title: "Keep" }), notePayload("n2", { title: "Drop" })],
+  });
+  const statements = buildSaveStatements("user-a", payload);
+  await assert.rejects(() =>
+    client.batch(
+      [
+        ...statements.map((item) => ({ sql: item.sql, args: item.args as never[] })),
+        { sql: "insert into __no_such_table (x) values (1)" },
+      ],
+      "write",
+    ),
+  );
+  const loaded = await loadVaultForUser(query, "user-a");
+  assert.equal(loaded.notes.length, 0);
+});
+
+test("retry after a rolled-back batch is idempotent and succeeds", async () => {
+  const { query, batch, client } = await memoryDb();
+  const payload = parseSavePayload({
+    notes: [notePayload("n1", { title: "Retry", content: "body", updatedAt: 5 })],
+  });
+  const statements = buildSaveStatements("user-a", payload);
+  await assert.rejects(() =>
+    client.batch(
+      [
+        ...statements.map((item) => ({ sql: item.sql, args: item.args as never[] })),
+        { sql: "insert into __no_such_table (x) values (1)" },
+      ],
+      "write",
+    ),
+  );
+  await saveVaultForUser(query, "user-a", payload, batch);
+  await saveVaultForUser(query, "user-a", payload, batch);
+  const loaded = await loadVaultForUser(query, "user-a");
+  assert.equal(loaded.notes.length, 1);
+  assert.equal(loaded.notes[0]?.title, "Retry");
+  assert.equal(loaded.notes[0]?.updatedAt, 5);
+});
+
+test("publicErrorMessage does not leak SQL or other-user details", () => {
+  assert.deepEqual(publicErrorMessage(new Error("SQLITE_ERROR: no such table notes")), {
+    message: "Couldn't save notes",
+    status: 500,
+  });
+  assert.deepEqual(publicErrorMessage(new VaultError("Invalid pinned")), {
+    message: "Invalid pinned",
+    status: 400,
+  });
 });

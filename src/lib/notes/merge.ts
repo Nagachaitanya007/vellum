@@ -17,6 +17,7 @@ export type MergeInput = {
   folders: Folder[];
   dirtyNoteIds: string[];
   pendingDeletes: string[];
+  pendingDeleteAt?: Record<string, number>;
   dirtyFolders: boolean;
   foldersUpdatedAt?: number;
 };
@@ -37,6 +38,7 @@ export type MergeResult = {
   foldersToPush: Folder[] | null;
   dirtyNoteIds: string[];
   pendingDeletes: string[];
+  pendingDeleteAt: Record<string, number>;
   dirtyFolders: boolean;
   foldersUpdatedAt: number;
 };
@@ -62,19 +64,27 @@ function payloadToNote(payload: RemoteNote): Note {
   };
 }
 
-/** Last-write-wins merge. Local dirty rows with a newer (or equal) updatedAt are kept and re-pushed. */
+function omitKey(map: Record<string, number>, id: string): Record<string, number> {
+  if (!(id in map)) return map;
+  const { [id]: _dropped, ...rest } = map;
+  return rest;
+}
+
+/** Last-write-wins merge. Local dirty rows with a newer (or equal) version are kept and re-pushed. */
 export function mergeVault(local: MergeInput, remote: MergeRemote): MergeResult {
   const dirty = new Set(local.dirtyNoteIds);
   const deleting = new Set(local.pendingDeletes);
+  const deleteAt = { ...(local.pendingDeleteAt ?? {}) };
   const remoteDeleted = new Set(remote.deletedIds);
   const localById = new Map(local.notes.map((item) => [item.id, item]));
   const remoteById = new Map(remote.notes.map((item) => [item.id, payloadToNote(item)]));
-  const ids = new Set([...localById.keys(), ...remoteById.keys()]);
+  const ids = new Set([...localById.keys(), ...remoteById.keys(), ...deleting, ...remoteDeleted]);
 
   const notes: Note[] = [];
   const toPush: Note[] = [];
   const stillDirty: string[] = [];
   const stillDelete: string[] = [];
+  let stillDeleteAt = { ...deleteAt };
 
   for (const id of ids) {
     const loc = localById.get(id);
@@ -82,6 +92,12 @@ export function mergeVault(local: MergeInput, remote: MergeRemote): MergeResult 
     const localDirty = dirty.has(id);
 
     if (deleting.has(id)) {
+      const delAt = deleteAt[id];
+      if (rem && typeof delAt === "number" && rem.updatedAt > delAt) {
+        stillDeleteAt = omitKey(stillDeleteAt, id);
+        notes.push(rem);
+        continue;
+      }
       stillDelete.push(id);
       continue;
     }
@@ -133,6 +149,11 @@ export function mergeVault(local: MergeInput, remote: MergeRemote): MergeResult 
     foldersUpdatedAt = localFolderAt || Date.now();
   }
 
+  const pendingDeleteAt: Record<string, number> = {};
+  for (const id of stillDelete) {
+    if (typeof stillDeleteAt[id] === "number") pendingDeleteAt[id] = stillDeleteAt[id] as number;
+  }
+
   return {
     notes: sortNotes(notes),
     folders,
@@ -141,6 +162,7 @@ export function mergeVault(local: MergeInput, remote: MergeRemote): MergeResult 
     foldersToPush,
     dirtyNoteIds: stillDirty,
     pendingDeletes: stillDelete,
+    pendingDeleteAt,
     dirtyFolders,
     foldersUpdatedAt,
   };

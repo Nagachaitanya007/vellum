@@ -6,6 +6,7 @@ export type SyncSlice = {
   folders: Folder[];
   dirtyNoteIds: string[];
   pendingDeletes: string[];
+  pendingDeleteAt: Record<string, number>;
   dirtyFolders: boolean;
   foldersUpdatedAt: number;
   activeId: string | null;
@@ -13,7 +14,7 @@ export type SyncSlice = {
 
 export type UploadBatch = {
   notes: Array<{ id: string; updatedAt: number }>;
-  deleted: Array<{ id: string }>;
+  deleted: Array<{ id: string; deletedAt: number }>;
   /** Set when this upload included folders; null means folders were not sent. */
   foldersUpdatedAt: number | null;
 };
@@ -35,6 +36,12 @@ export type SavePayload = {
   foldersUpdatedAt?: number;
 };
 
+function omitKey(map: Record<string, number>, id: string): Record<string, number> {
+  if (!(id in map)) return map;
+  const { [id]: _dropped, ...rest } = map;
+  return rest;
+}
+
 export function captureDirty(state: SyncSlice): { batch: UploadBatch; payload: SavePayload } | null {
   if (!state.dirtyNoteIds.length && !state.pendingDeletes.length && !state.dirtyFolders) {
     return null;
@@ -42,10 +49,13 @@ export function captureDirty(state: SyncSlice): { batch: UploadBatch; payload: S
   const dirty = new Set(state.dirtyNoteIds);
   const notes = state.notes.filter((note) => dirty.has(note.id));
   const liveIds = new Set(state.notes.map((note) => note.id));
-  const deletedAt = Date.now();
-  const deleted = state.pendingDeletes
-    .filter((id) => !liveIds.has(id))
-    .map((id) => ({ id, deletedAt }));
+  const deleted: Array<{ id: string; deletedAt: number }> = [];
+  for (const id of state.pendingDeletes) {
+    if (liveIds.has(id)) continue;
+    const deletedAt = state.pendingDeleteAt[id];
+    if (typeof deletedAt !== "number" || !Number.isFinite(deletedAt)) continue;
+    deleted.push({ id, deletedAt });
+  }
   if (!notes.length && !deleted.length && !state.dirtyFolders) {
     return null;
   }
@@ -53,7 +63,7 @@ export function captureDirty(state: SyncSlice): { batch: UploadBatch; payload: S
   return {
     batch: {
       notes: notes.map((note) => ({ id: note.id, updatedAt: note.updatedAt })),
-      deleted: deleted.map((item) => ({ id: item.id })),
+      deleted: deleted.map((item) => ({ id: item.id, deletedAt: item.deletedAt })),
       foldersUpdatedAt,
     },
     payload: {
@@ -83,10 +93,11 @@ export function captureDirty(state: SyncSlice): { batch: UploadBatch; payload: S
 export function acknowledgeUpload(
   state: SyncSlice,
   batch: UploadBatch,
-): Pick<SyncSlice, "dirtyNoteIds" | "pendingDeletes" | "dirtyFolders"> {
+): Pick<SyncSlice, "dirtyNoteIds" | "pendingDeletes" | "pendingDeleteAt" | "dirtyFolders"> {
   const noteById = new Map(state.notes.map((note) => [note.id, note]));
   const dirty = new Set(state.dirtyNoteIds);
   const deleting = new Set(state.pendingDeletes);
+  let deleteAt = { ...state.pendingDeleteAt };
 
   for (const uploaded of batch.notes) {
     const current = noteById.get(uploaded.id);
@@ -95,11 +106,16 @@ export function acknowledgeUpload(
   }
 
   for (const tomb of batch.deleted) {
+    const currentDeleteAt = deleteAt[tomb.id];
     if (noteById.has(tomb.id)) {
-      deleting.delete(tomb.id);
+      if (currentDeleteAt === tomb.deletedAt || currentDeleteAt == null) {
+        deleting.delete(tomb.id);
+        deleteAt = omitKey(deleteAt, tomb.id);
+      }
       dirty.add(tomb.id);
-    } else if (deleting.has(tomb.id)) {
+    } else if (deleting.has(tomb.id) && currentDeleteAt === tomb.deletedAt) {
       deleting.delete(tomb.id);
+      deleteAt = omitKey(deleteAt, tomb.id);
     }
   }
 
@@ -111,13 +127,14 @@ export function acknowledgeUpload(
   return {
     dirtyNoteIds: [...dirty],
     pendingDeletes: [...deleting],
+    pendingDeleteAt: deleteAt,
     dirtyFolders,
   };
 }
 
 /**
  * Apply a merge result without clobbering edits that landed after mergeVault ran.
- * Current pending deletes always win over a stale merge snapshot.
+ * Current pending deletes win unless the merged note is a newer version.
  */
 export function reconcileMerge(merged: MergeResult, current: SyncSlice): SyncSlice {
   const currentById = new Map(current.notes.map((note) => [note.id, note]));
@@ -125,15 +142,25 @@ export function reconcileMerge(merged: MergeResult, current: SyncSlice): SyncSli
   const deleting = new Set(current.pendingDeletes);
   const dirty = new Set(current.dirtyNoteIds);
   const mergedDirty = new Set(merged.dirtyNoteIds);
+  let deleteAt = { ...current.pendingDeleteAt };
   const ids = new Set([...currentById.keys(), ...mergedById.keys()]);
   const notes: Note[] = [];
   const stillDirty: string[] = [];
 
   for (const id of ids) {
-    if (deleting.has(id)) continue;
     const cur = currentById.get(id);
     const mer = mergedById.get(id);
-    if (cur && dirty.has(id) && (!mer || cur.updatedAt > mer.updatedAt)) {
+    if (deleting.has(id)) {
+      const delAt = deleteAt[id];
+      if (mer && typeof delAt === "number" && mer.updatedAt > delAt) {
+        deleting.delete(id);
+        deleteAt = omitKey(deleteAt, id);
+        notes.push(mer);
+        if (mergedDirty.has(id)) stillDirty.push(id);
+      }
+      continue;
+    }
+    if (cur && dirty.has(id) && (!mer || cur.updatedAt >= mer.updatedAt)) {
       notes.push(cur);
       stillDirty.push(id);
     } else if (mer) {
@@ -159,6 +186,7 @@ export function reconcileMerge(merged: MergeResult, current: SyncSlice): SyncSli
     folders,
     dirtyNoteIds: stillDirty,
     pendingDeletes: [...deleting],
+    pendingDeleteAt: deleteAt,
     dirtyFolders,
     foldersUpdatedAt,
     activeId: activeStillThere ? current.activeId : (notes[0]?.id ?? null),

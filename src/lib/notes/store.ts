@@ -11,6 +11,7 @@ import { DEFAULT_GRAPH_STYLE, normalizeGraphStyle } from "./graph-style";
 import { DEFAULT_FOLDERS, seedNotes } from "./seed";
 import { nextAdoptVaultUser, reconcileMerge } from "./sync-engine";
 import { mergeVault } from "./merge";
+import { nextRevision, observeRevision, revisionAfter } from "./revision";
 import type {
   CreateNoteInput,
   Drawing,
@@ -72,7 +73,7 @@ function newId(): string {
 }
 
 function normalizeNote(raw: Partial<Note> & { id: string; title?: string; content?: string }): Note {
-  return {
+  const note: Note = {
     id: raw.id,
     title: raw.title ?? "",
     content: raw.content ?? "",
@@ -83,6 +84,9 @@ function normalizeNote(raw: Partial<Note> & { id: string; title?: string; conten
     createdAt: raw.createdAt ?? Date.now(),
     updatedAt: raw.updatedAt ?? Date.now(),
   };
+  observeRevision(note.createdAt);
+  observeRevision(note.updatedAt);
+  return note;
 }
 
 type NotesState = {
@@ -100,6 +104,7 @@ type NotesState = {
   hasHydrated: boolean;
   dirtyNoteIds: string[];
   pendingDeletes: string[];
+  pendingDeleteAt: Record<string, number>;
   dirtyFolders: boolean;
   foldersUpdatedAt: number;
   syncStatus: SyncStatus;
@@ -145,6 +150,7 @@ type PersistedSlice = {
   initialized?: boolean;
   dirtyNoteIds?: string[];
   pendingDeletes?: string[];
+  pendingDeleteAt?: Record<string, number>;
   dirtyFolders?: boolean;
   foldersUpdatedAt?: number;
   vaultOwnerId?: string | null;
@@ -157,6 +163,34 @@ function withDirty(ids: string[], id: string): string[] {
 
 function withoutId(ids: string[], id: string): string[] {
   return ids.filter((item) => item !== id);
+}
+
+function omitKey(map: Record<string, number>, id: string): Record<string, number> {
+  if (!(id in map)) return map;
+  const { [id]: _dropped, ...rest } = map;
+  return rest;
+}
+
+function normalizePendingDeleteAt(
+  ids: unknown,
+  raw: unknown,
+): Record<string, number> {
+  const list = Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : [];
+  const source =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {};
+  const out: Record<string, number> = {};
+  for (const id of list) {
+    const value = source[id];
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+      out[id] = value;
+      observeRevision(value);
+    } else {
+      out[id] = nextRevision();
+    }
+  }
+  return out;
 }
 
 function folderIdForNew(filter: LibraryFilter): string | null {
@@ -188,6 +222,7 @@ function applyPersisted(data: PersistedSlice) {
       hasHydrated: true,
       dirtyNoteIds: [],
       pendingDeletes: [],
+      pendingDeleteAt: {},
       dirtyFolders: true,
       foldersUpdatedAt: Date.now(),
       vaultOwnerId: null,
@@ -201,6 +236,8 @@ function applyPersisted(data: PersistedSlice) {
     data.activeId && notes.some((note) => note.id === data.activeId)
       ? data.activeId
       : (notes[0]?.id ?? null);
+  const foldersUpdatedAt = typeof data.foldersUpdatedAt === "number" ? data.foldersUpdatedAt : 0;
+  observeRevision(foldersUpdatedAt);
   useNotesStore.setState({
     notes,
     folders,
@@ -214,8 +251,9 @@ function applyPersisted(data: PersistedSlice) {
     hasHydrated: true,
     dirtyNoteIds: Array.isArray(data.dirtyNoteIds) ? data.dirtyNoteIds : [],
     pendingDeletes: Array.isArray(data.pendingDeletes) ? data.pendingDeletes : [],
+    pendingDeleteAt: normalizePendingDeleteAt(data.pendingDeletes, data.pendingDeleteAt),
     dirtyFolders: Boolean(data.dirtyFolders),
-    foldersUpdatedAt: typeof data.foldersUpdatedAt === "number" ? data.foldersUpdatedAt : 0,
+    foldersUpdatedAt,
     vaultOwnerId: typeof data.vaultOwnerId === "string" ? data.vaultOwnerId : null,
     lastVaultOwnerId:
       typeof data.lastVaultOwnerId === "string"
@@ -285,6 +323,7 @@ export const useNotesStore = create<NotesState>()(
       hasHydrated: false,
       dirtyNoteIds: [],
       pendingDeletes: [],
+      pendingDeleteAt: {},
       dirtyFolders: false,
       foldersUpdatedAt: 0,
       syncStatus: "local",
@@ -316,6 +355,7 @@ export const useNotesStore = create<NotesState>()(
           activeId: null,
           dirtyNoteIds: [],
           pendingDeletes: [],
+          pendingDeleteAt: {},
           dirtyFolders: false,
           foldersUpdatedAt: 0,
           vaultOwnerId: adopted.vaultOwnerId,
@@ -326,7 +366,7 @@ export const useNotesStore = create<NotesState>()(
       },
 
       createNote: (input = {}) => {
-        const now = Date.now();
+        const now = nextRevision();
         const filter = get().filter;
         const note: Note = {
           id: newId(),
@@ -346,12 +386,15 @@ export const useNotesStore = create<NotesState>()(
           workspace: "notes",
           dirtyNoteIds: withDirty(state.dirtyNoteIds, note.id),
           pendingDeletes: withoutId(state.pendingDeletes, note.id),
+          pendingDeleteAt: omitKey(state.pendingDeleteAt, note.id),
         }));
         return note.id;
       },
 
       deleteNote: (id) => {
         set((state) => {
+          const existing = state.notes.find((note) => note.id === id);
+          const deletedAt = revisionAfter(existing?.updatedAt ?? 0);
           const remaining = state.notes.filter((note) => note.id !== id);
           const nextActive =
             state.activeId === id ? (remaining[0]?.id ?? null) : state.activeId;
@@ -360,6 +403,7 @@ export const useNotesStore = create<NotesState>()(
             activeId: nextActive,
             dirtyNoteIds: withoutId(state.dirtyNoteIds, id),
             pendingDeletes: withDirty(state.pendingDeletes, id),
+            pendingDeleteAt: { ...state.pendingDeleteAt, [id]: deletedAt },
           };
         });
       },
@@ -372,7 +416,7 @@ export const useNotesStore = create<NotesState>()(
                 ? {
                     ...note,
                     ...patch,
-                    updatedAt: Date.now(),
+                    updatedAt: revisionAfter(note.updatedAt),
                   }
                 : note,
             ),
@@ -384,7 +428,7 @@ export const useNotesStore = create<NotesState>()(
       updateDrawing: (id, drawing) => {
         set((state) => ({
           notes: state.notes.map((note) =>
-            note.id === id ? { ...note, drawing, updatedAt: Date.now() } : note,
+            note.id === id ? { ...note, drawing, updatedAt: revisionAfter(note.updatedAt) } : note,
           ),
           dirtyNoteIds: withDirty(state.dirtyNoteIds, id),
         }));
@@ -395,7 +439,7 @@ export const useNotesStore = create<NotesState>()(
           notes: sortNotes(
             state.notes.map((note) =>
               note.id === id
-                ? { ...note, pinned: !note.pinned, updatedAt: Date.now() }
+                ? { ...note, pinned: !note.pinned, updatedAt: revisionAfter(note.updatedAt) }
                 : note,
             ),
           ),
@@ -442,7 +486,7 @@ export const useNotesStore = create<NotesState>()(
           filter: { type: "folder", id: folder.id },
           workspace: "notes",
           dirtyFolders: true,
-          foldersUpdatedAt: Date.now(),
+          foldersUpdatedAt: revisionAfter(state.foldersUpdatedAt),
         }));
         return folder.id;
       },
@@ -453,7 +497,7 @@ export const useNotesStore = create<NotesState>()(
           const notes = state.notes.map((note) => {
             if (note.folderId !== id) return note;
             touched.push(note.id);
-            return { ...note, folderId: null, updatedAt: Date.now() };
+            return { ...note, folderId: null, updatedAt: revisionAfter(note.updatedAt) };
           });
           const filter =
             state.filter.type === "folder" && state.filter.id === id
@@ -464,7 +508,7 @@ export const useNotesStore = create<NotesState>()(
             notes: sortNotes(notes),
             filter,
             dirtyFolders: true,
-            foldersUpdatedAt: Date.now(),
+            foldersUpdatedAt: revisionAfter(state.foldersUpdatedAt),
             dirtyNoteIds: touched.reduce(withDirty, state.dirtyNoteIds),
           };
         });
@@ -542,6 +586,7 @@ export const useNotesStore = create<NotesState>()(
         initialized: state.initialized,
         dirtyNoteIds: state.dirtyNoteIds,
         pendingDeletes: state.pendingDeletes,
+        pendingDeleteAt: state.pendingDeleteAt,
         dirtyFolders: state.dirtyFolders,
         foldersUpdatedAt: state.foldersUpdatedAt,
         vaultOwnerId: state.vaultOwnerId,
@@ -589,12 +634,21 @@ function ingestOtherTab(raw: string) {
         folders: current.folders,
         dirtyNoteIds: current.dirtyNoteIds,
         pendingDeletes: current.pendingDeletes,
+        pendingDeleteAt: current.pendingDeleteAt,
         dirtyFolders: current.dirtyFolders,
         foldersUpdatedAt: current.foldersUpdatedAt,
       },
       {
         notes: incoming,
         deletedIds: Array.isArray(data.pendingDeletes) ? data.pendingDeletes : [],
+        deletedAt:
+          data.pendingDeleteAt && typeof data.pendingDeleteAt === "object"
+            ? Object.fromEntries(
+                Object.entries(data.pendingDeleteAt).filter(
+                  (entry): entry is [string, number] => typeof entry[1] === "number",
+                ),
+              )
+            : {},
         folders,
         foldersUpdatedAt:
           typeof data.foldersUpdatedAt === "number" ? data.foldersUpdatedAt : 0,
@@ -606,6 +660,7 @@ function ingestOtherTab(raw: string) {
       folders: latest.folders,
       dirtyNoteIds: latest.dirtyNoteIds,
       pendingDeletes: latest.pendingDeletes,
+      pendingDeleteAt: latest.pendingDeleteAt,
       dirtyFolders: latest.dirtyFolders,
       foldersUpdatedAt: latest.foldersUpdatedAt,
       activeId: latest.activeId,
@@ -615,6 +670,7 @@ function ingestOtherTab(raw: string) {
       folders: reconciled.folders,
       dirtyNoteIds: reconciled.dirtyNoteIds,
       pendingDeletes: reconciled.pendingDeletes,
+      pendingDeleteAt: reconciled.pendingDeleteAt,
       dirtyFolders: reconciled.dirtyFolders,
       foldersUpdatedAt: reconciled.foldersUpdatedAt,
       activeId: reconciled.activeId,

@@ -30,22 +30,11 @@ const STROKE_TOOLS: StrokeTool[] = [
   "text",
 ];
 
+const DRAW_COLORS = ["ink", "red", "blue", "green", "highlight"] as const;
+const DRAW_FILLS = ["none", "tint", "solid"] as const;
+
 function emptyDrawing(): Drawing {
   return { strokes: [] };
-}
-
-function normalizeIncomingDrawing(raw: unknown): Drawing {
-  if (!raw || typeof raw !== "object") return emptyDrawing();
-  const strokes = (raw as { strokes?: unknown }).strokes;
-  if (!Array.isArray(strokes)) return emptyDrawing();
-  return {
-    strokes: strokes.filter((stroke): stroke is Stroke => {
-      if (!stroke || typeof stroke !== "object") return false;
-      const item = stroke as Stroke;
-      if (!Array.isArray(item.points) || item.points.length < 2) return false;
-      return STROKE_TOOLS.includes(item.tool);
-    }),
-  };
 }
 
 export class VaultError extends Error {
@@ -61,6 +50,10 @@ export type QueryFn = <T = Record<string, unknown>>(
   text: string,
   params?: unknown[],
 ) => Promise<T[]>;
+
+export type Statement = { sql: string; args: unknown[] };
+
+export type BatchFn = (statements: Statement[]) => Promise<void>;
 
 export type NotePayload = {
   id: string;
@@ -82,14 +75,6 @@ export type VaultSnapshot = {
   foldersUpdatedAt: number | null;
 };
 
-export type SaveInput = {
-  notes?: unknown;
-  deleted?: unknown;
-  folders?: unknown;
-  foldersUpdatedAt?: unknown;
-  userId?: unknown;
-};
-
 export type ValidatedSave = {
   notes: NotePayload[];
   deleted: Array<{ id: string; deletedAt: number }>;
@@ -105,7 +90,7 @@ function asId(value: unknown, label: string): string {
 }
 
 function asEpoch(value: unknown, label: string): number {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 1e15) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 1e15) {
     throw new VaultError(`Invalid ${label}`);
   }
   return value;
@@ -117,65 +102,145 @@ function asString(value: unknown, max: number, label: string): string {
   return value;
 }
 
-function asDrawing(raw: unknown): Drawing {
-  const drawing = normalizeIncomingDrawing(raw);
-  if (drawing.strokes.length > VAULT_LIMITS.maxStrokes) {
-    throw new VaultError("Drawing has too many strokes");
+function asBoolean(value: unknown, label: string): boolean {
+  if (value === true || value === false) return value;
+  throw new VaultError(`Invalid ${label}`);
+}
+
+function asKind(value: unknown): NoteKind {
+  if (value === "canvas" || value === "markdown") return value;
+  throw new VaultError("Invalid kind");
+}
+
+function asFolderId(value: unknown): string | null {
+  if (value === null) return null;
+  return asId(value, "folder id");
+}
+
+function asStroke(raw: unknown): Stroke {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new VaultError("Invalid drawing");
   }
-  for (const stroke of drawing.strokes) {
-    if (stroke.points.length > VAULT_LIMITS.maxPointsPerStroke) {
-      throw new VaultError("Drawing stroke is too large");
+  const item = raw as Record<string, unknown>;
+  if (!STROKE_TOOLS.includes(item.tool as StrokeTool)) {
+    throw new VaultError("Invalid drawing");
+  }
+  if (typeof item.id !== "string" || item.id.length === 0 || item.id.length > 128) {
+    throw new VaultError("Invalid drawing");
+  }
+  if (!DRAW_COLORS.includes(item.color as (typeof DRAW_COLORS)[number])) {
+    throw new VaultError("Invalid drawing");
+  }
+  if (typeof item.size !== "number" || !Number.isFinite(item.size) || item.size <= 0) {
+    throw new VaultError("Invalid drawing");
+  }
+  if (!Array.isArray(item.points) || item.points.length < 2) {
+    throw new VaultError("Invalid drawing");
+  }
+  if (item.points.length > VAULT_LIMITS.maxPointsPerStroke) {
+    throw new VaultError("Drawing stroke is too large");
+  }
+  for (const point of item.points) {
+    if (typeof point !== "number" || !Number.isFinite(point)) {
+      throw new VaultError("Invalid drawing");
     }
   }
+  const stroke: Stroke = {
+    id: item.id,
+    tool: item.tool as StrokeTool,
+    color: item.color as Stroke["color"],
+    size: item.size,
+    points: item.points as number[],
+  };
+  if (item.text !== undefined) {
+    if (typeof item.text !== "string") throw new VaultError("Invalid drawing");
+    stroke.text = item.text;
+  }
+  if (item.fill !== undefined) {
+    if (!DRAW_FILLS.includes(item.fill as (typeof DRAW_FILLS)[number])) {
+      throw new VaultError("Invalid drawing");
+    }
+    stroke.fill = item.fill as Stroke["fill"];
+  }
+  if (item.textWidth !== undefined) {
+    if (typeof item.textWidth !== "number" || !Number.isFinite(item.textWidth)) {
+      throw new VaultError("Invalid drawing");
+    }
+    stroke.textWidth = item.textWidth;
+  }
+  return stroke;
+}
+
+function asDrawing(raw: unknown): Drawing {
+  if (raw == null || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new VaultError("Invalid drawing");
+  }
+  const strokesRaw = (raw as { strokes?: unknown }).strokes;
+  if (!Array.isArray(strokesRaw)) throw new VaultError("Invalid drawing");
+  if (strokesRaw.length > VAULT_LIMITS.maxStrokes) {
+    throw new VaultError("Drawing has too many strokes");
+  }
+  const strokes = strokesRaw.map(asStroke);
   let encoded: string;
   try {
-    encoded = JSON.stringify(drawing);
+    encoded = JSON.stringify({ strokes });
   } catch {
     throw new VaultError("Invalid drawing");
   }
   if (encoded.length > VAULT_LIMITS.maxDrawingBytes) {
     throw new VaultError("Drawing is too large");
   }
-  return drawing;
+  return { strokes };
 }
 
 function parseNote(raw: unknown): NotePayload {
-  if (!raw || typeof raw !== "object") throw new VaultError("Invalid note");
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new VaultError("Invalid note");
+  }
   const note = raw as Record<string, unknown>;
-  const kind: NoteKind = note.kind === "canvas" ? "canvas" : "markdown";
-  const folderId =
-    note.folderId == null || note.folderId === ""
-      ? null
-      : asId(note.folderId, "folder id");
   return {
     id: asId(note.id, "note id"),
-    title: asString(note.title ?? "", VAULT_LIMITS.maxTitleLength, "title"),
-    content: asString(note.content ?? "", VAULT_LIMITS.maxContentLength, "content"),
-    folderId,
-    pinned: Boolean(note.pinned),
-    kind,
+    title: asString(note.title, VAULT_LIMITS.maxTitleLength, "title"),
+    content: asString(note.content, VAULT_LIMITS.maxContentLength, "content"),
+    folderId: asFolderId(note.folderId),
+    pinned: asBoolean(note.pinned, "pinned"),
+    kind: asKind(note.kind),
     drawing: asDrawing(note.drawing),
-    createdAt: asEpoch(note.createdAt ?? 0, "createdAt"),
-    updatedAt: asEpoch(note.updatedAt ?? 0, "updatedAt"),
+    createdAt: asEpoch(note.createdAt, "createdAt"),
+    updatedAt: asEpoch(note.updatedAt, "updatedAt"),
   };
 }
 
 function parseFolder(raw: unknown): Folder {
-  if (!raw || typeof raw !== "object") throw new VaultError("Invalid folder");
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new VaultError("Invalid folder");
+  }
   const folder = raw as Record<string, unknown>;
   return {
     id: asId(folder.id, "folder id"),
-    name: asString(folder.name ?? "", VAULT_LIMITS.maxFolderNameLength, "folder name"),
+    name: asString(folder.name, VAULT_LIMITS.maxFolderNameLength, "folder name"),
+  };
+}
+
+function parseDelete(raw: unknown): { id: string; deletedAt: number } {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new VaultError("Invalid delete");
+  }
+  const tomb = raw as Record<string, unknown>;
+  return {
+    id: asId(tomb.id, "deleted id"),
+    deletedAt: asEpoch(tomb.deletedAt, "deletedAt"),
   };
 }
 
 /** Rejects malformed / oversized payloads. Ignores any client-supplied userId. */
-export function parseSavePayload(input: SaveInput): ValidatedSave {
-  if (input == null || typeof input !== "object") {
+export function parseSavePayload(input: unknown): ValidatedSave {
+  if (input == null || typeof input !== "object" || Array.isArray(input)) {
     throw new VaultError("Invalid payload");
   }
-  const notesRaw = input.notes ?? [];
-  const deletedRaw = input.deleted ?? [];
+  const body = input as Record<string, unknown>;
+  const notesRaw = body.notes === undefined ? [] : body.notes;
+  const deletedRaw = body.deleted === undefined ? [] : body.deleted;
   if (!Array.isArray(notesRaw)) throw new VaultError("Invalid notes");
   if (!Array.isArray(deletedRaw)) throw new VaultError("Invalid deleted list");
   if (notesRaw.length > VAULT_LIMITS.maxNotesPerSave) {
@@ -186,27 +251,19 @@ export function parseSavePayload(input: SaveInput): ValidatedSave {
   }
 
   const notes = notesRaw.map(parseNote);
-  const deleted = deletedRaw.map((item) => {
-    if (!item || typeof item !== "object") throw new VaultError("Invalid delete");
-    const tomb = item as Record<string, unknown>;
-    return {
-      id: asId(tomb.id, "deleted id"),
-      deletedAt: asEpoch(tomb.deletedAt ?? Date.now(), "deletedAt"),
-    };
-  });
+  const deleted = deletedRaw.map(parseDelete);
 
   let folders: Folder[] | undefined;
   let foldersUpdatedAt: number | undefined;
-  if (input.folders !== undefined) {
-    if (!Array.isArray(input.folders)) throw new VaultError("Invalid folders");
-    if (input.folders.length > VAULT_LIMITS.maxFolders) {
+  if (body.folders !== undefined) {
+    if (!Array.isArray(body.folders)) throw new VaultError("Invalid folders");
+    if (body.folders.length > VAULT_LIMITS.maxFolders) {
       throw new VaultError("Too many folders");
     }
-    folders = input.folders.map(parseFolder);
-    foldersUpdatedAt = asEpoch(
-      typeof input.foldersUpdatedAt === "number" ? input.foldersUpdatedAt : Date.now(),
-      "foldersUpdatedAt",
-    );
+    folders = body.folders.map(parseFolder);
+    foldersUpdatedAt = asEpoch(body.foldersUpdatedAt, "foldersUpdatedAt");
+  } else if (body.foldersUpdatedAt !== undefined) {
+    throw new VaultError("Invalid folders");
   }
 
   return { notes, deleted, folders, foldersUpdatedAt };
@@ -229,12 +286,31 @@ function parseDrawingColumn(raw: unknown): Drawing {
   if (!raw) return emptyDrawing();
   if (typeof raw === "string") {
     try {
-      return normalizeIncomingDrawing(JSON.parse(raw));
+      const parsed = JSON.parse(raw) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return emptyDrawing();
+      const strokes = (parsed as { strokes?: unknown }).strokes;
+      if (!Array.isArray(strokes)) return emptyDrawing();
+      const clean: Stroke[] = [];
+      for (const stroke of strokes) {
+        try {
+          clean.push(asStroke(stroke));
+        } catch {
+          /* skip a corrupt stored stroke rather than dropping the note */
+        }
+      }
+      return { strokes: clean };
     } catch {
       return emptyDrawing();
     }
   }
-  return normalizeIncomingDrawing(raw);
+  if (typeof raw === "object") {
+    try {
+      return asDrawing(raw);
+    } catch {
+      return emptyDrawing();
+    }
+  }
+  return emptyDrawing();
 }
 
 function parseFoldersColumn(raw: unknown): Folder[] {
@@ -318,14 +394,12 @@ export async function loadVaultForUser(query: QueryFn, userId: string): Promise<
   };
 }
 
-export async function saveVaultForUser(
-  query: QueryFn,
-  userId: string,
-  data: ValidatedSave,
-): Promise<{ ok: true }> {
+export function buildSaveStatements(userId: string, data: ValidatedSave): Statement[] {
+  const statements: Statement[] = [];
+
   for (const note of data.notes) {
-    await query(
-      `insert into notes (
+    statements.push({
+      sql: `insert into notes (
           id, user_id, title, content, folder_id, pinned, kind, drawing, created_at, updated_at, deleted_at
         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null)
         on conflict (user_id, id) do update set
@@ -339,7 +413,7 @@ export async function saveVaultForUser(
           updated_at = excluded.updated_at,
           deleted_at = null
         where notes.updated_at <= excluded.updated_at`,
-      [
+      args: [
         note.id,
         userId,
         note.title,
@@ -351,35 +425,56 @@ export async function saveVaultForUser(
         note.createdAt,
         note.updatedAt,
       ],
-    );
+    });
   }
 
   for (const tomb of data.deleted) {
-    await query(
-      `insert into notes (
+    statements.push({
+      sql: `insert into notes (
           id, user_id, title, content, folder_id, pinned, drawing, created_at, updated_at, deleted_at
         ) values (?, ?, '', '', null, 0, '{"strokes":[]}', ?, ?, ?)
         on conflict (user_id, id) do update set
           deleted_at = excluded.deleted_at,
           updated_at = excluded.updated_at
         where coalesce(notes.deleted_at, notes.updated_at) <= excluded.deleted_at`,
-      [tomb.id, userId, tomb.deletedAt, tomb.deletedAt, tomb.deletedAt],
-    );
+      args: [tomb.id, userId, tomb.deletedAt, tomb.deletedAt, tomb.deletedAt],
+    });
   }
 
   if (data.folders) {
-    const updatedAt = data.foldersUpdatedAt ?? Date.now();
-    await query(
-      `insert into vault_settings (user_id, folders, updated_at)
+    const updatedAt = data.foldersUpdatedAt;
+    if (typeof updatedAt !== "number") {
+      throw new VaultError("Invalid foldersUpdatedAt");
+    }
+    statements.push({
+      sql: `insert into vault_settings (user_id, folders, updated_at)
        values (?, ?, ?)
        on conflict (user_id) do update set
          folders = excluded.folders,
          updated_at = excluded.updated_at
        where vault_settings.updated_at <= excluded.updated_at`,
-      [userId, JSON.stringify(data.folders), updatedAt],
-    );
+      args: [userId, JSON.stringify(data.folders), updatedAt],
+    });
   }
 
+  return statements;
+}
+
+export async function saveVaultForUser(
+  query: QueryFn,
+  userId: string,
+  data: ValidatedSave,
+  batch?: BatchFn,
+): Promise<{ ok: true }> {
+  const statements = buildSaveStatements(userId, data);
+  if (statements.length === 0) return { ok: true };
+  if (batch) {
+    await batch(statements);
+    return { ok: true };
+  }
+  for (const statement of statements) {
+    await query(statement.sql, statement.args);
+  }
   return { ok: true };
 }
 

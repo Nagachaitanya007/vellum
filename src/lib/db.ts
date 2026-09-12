@@ -134,6 +134,22 @@ export function getSql(): Promise<Sql> {
   return globalRef.__libsqlSqlPromise__;
 }
 
+/** Run write statements in a single libSQL transaction (all succeed or all roll back). */
+export async function executeWriteBatch(
+  statements: Array<{ sql: string; args: unknown[] }>,
+): Promise<void> {
+  if (statements.length === 0) return;
+  const client = await getLibsql();
+  await client.batch(
+    statements.map((item) => ({
+      sql: toPositional(item.sql),
+      args: item.args as InValue[],
+    })),
+    "write",
+  );
+}
+
+
 export function ensureDbReady(): Promise<void> {
   return getSql().then(() => undefined);
 }

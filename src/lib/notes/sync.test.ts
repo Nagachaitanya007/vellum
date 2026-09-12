@@ -8,6 +8,7 @@ import {
   reconcileMerge,
   type SyncSlice,
 } from "./sync-engine.ts";
+import { nextRevision, resetRevisionForTests } from "./revision.ts";
 import type { Note } from "./types.ts";
 
 function note(id: string, extra: Partial<Note> = {}): Note {
@@ -30,6 +31,7 @@ function slice(extra: Partial<SyncSlice> = {}): SyncSlice {
     folders: extra.folders ?? [],
     dirtyNoteIds: extra.dirtyNoteIds ?? [],
     pendingDeletes: extra.pendingDeletes ?? [],
+    pendingDeleteAt: extra.pendingDeleteAt ?? {},
     dirtyFolders: extra.dirtyFolders ?? false,
     foldersUpdatedAt: extra.foldersUpdatedAt ?? 0,
     activeId: extra.activeId ?? extra.notes?.[0]?.id ?? null,
@@ -272,6 +274,7 @@ test("delete during an in-flight upload is not cleared by the note ack", async (
     notes: [],
     dirtyNoteIds: [],
     pendingDeletes: ["n1"],
+    pendingDeleteAt: { n1: 15 },
   });
   const ack = acknowledgeUpload(state, captured.batch);
   assert.deepEqual(ack.pendingDeletes, ["n1"]);
@@ -282,10 +285,12 @@ test("edit after delete begins syncing recreates the note instead of keeping the
   const state = slice({
     notes: [],
     pendingDeletes: ["n1"],
+    pendingDeleteAt: { n1: 10 },
   });
   const captured = captureDirty(state);
   assert.ok(captured);
   assert.equal(captured.payload.deleted[0]?.id, "n1");
+  assert.equal(captured.payload.deleted[0]?.deletedAt, 10);
 
   const after = slice({
     notes: [note("n1", { content: "restored", updatedAt: 50 })],
@@ -449,6 +454,7 @@ test("captureDirty does not tombstone a note that still exists locally", () => {
       notes: [note("n1", { content: "restored", updatedAt: 50 })],
       dirtyNoteIds: ["n1"],
       pendingDeletes: ["n1"],
+      pendingDeleteAt: { n1: 10 },
     }),
   );
   assert.ok(captured);
@@ -501,14 +507,144 @@ test("persisted localStorage slice keeps dirty markers so a refresh can retry", 
   const text = await readFile(new URL("./store.ts", import.meta.url), "utf8");
   const start = text.indexOf("partialize:");
   assert.ok(start >= 0);
-  const slice = text.slice(start, start + 900);
+  const slice = text.slice(start, start + 1200);
   for (const key of [
     "dirtyNoteIds",
     "pendingDeletes",
+    "pendingDeleteAt",
     "dirtyFolders",
     "foldersUpdatedAt",
     "lastVaultOwnerId",
   ]) {
     assert.match(slice, new RegExp(key));
   }
+});
+
+test("same-millisecond edits get distinct versions so ack cannot clear the newer one", () => {
+  resetRevisionForTests(0);
+  const v1 = nextRevision(50);
+  const v2 = nextRevision(50);
+  assert.notEqual(v1, v2);
+
+  const captured = captureDirty(
+    slice({
+      notes: [note("n1", { content: "first", updatedAt: v1 })],
+      dirtyNoteIds: ["n1"],
+    }),
+  );
+  assert.ok(captured);
+  assert.equal(captured.batch.notes[0]?.updatedAt, v1);
+
+  const after = slice({
+    notes: [note("n1", { content: "second", updatedAt: v2 })],
+    dirtyNoteIds: ["n1"],
+  });
+  const ack = acknowledgeUpload(after, captured.batch);
+  assert.equal(after.notes[0]?.content, "second");
+  assert.deepEqual(ack.dirtyNoteIds, ["n1"]);
+});
+
+test("offline delete keeps the mutation version, not the upload time", () => {
+  const captured = captureDirty(
+    slice({
+      notes: [],
+      pendingDeletes: ["n1"],
+      pendingDeleteAt: { n1: 10 },
+    }),
+  );
+  assert.ok(captured);
+  assert.equal(captured.payload.deleted[0]?.deletedAt, 10);
+  const retry = captureDirty(
+    slice({
+      notes: [],
+      pendingDeletes: ["n1"],
+      pendingDeleteAt: { n1: 10 },
+    }),
+  );
+  assert.ok(retry);
+  assert.equal(retry.payload.deleted[0]?.deletedAt, 10);
+});
+
+test("a newer delete during an in-flight tombstone upload is not acknowledged", () => {
+  const captured = captureDirty(
+    slice({
+      notes: [],
+      pendingDeletes: ["n1"],
+      pendingDeleteAt: { n1: 10 },
+    }),
+  );
+  assert.ok(captured);
+  const later = slice({
+    notes: [],
+    pendingDeletes: ["n1"],
+    pendingDeleteAt: { n1: 20 },
+  });
+  const ack = acknowledgeUpload(later, captured.batch);
+  assert.deepEqual(ack.pendingDeletes, ["n1"]);
+  assert.equal(ack.pendingDeleteAt.n1, 20);
+});
+
+test("a local stale delete loses to a newer remote edit", () => {
+  const merged = mergeVault(
+    {
+      notes: [],
+      folders: [],
+      dirtyNoteIds: [],
+      pendingDeletes: ["n1"],
+      pendingDeleteAt: { n1: 10 },
+      dirtyFolders: false,
+    },
+    {
+      notes: [
+        {
+          id: "n1",
+          title: "Remote newer",
+          content: "kept",
+          folderId: null,
+          pinned: false,
+          kind: "markdown",
+          drawing: { strokes: [] },
+          createdAt: 1,
+          updatedAt: 80,
+        },
+      ],
+      deletedIds: [],
+      folders: null,
+    },
+  );
+  assert.equal(merged.notes[0]?.content, "kept");
+  assert.deepEqual(merged.pendingDeletes, []);
+});
+
+test("a local newer delete still wins over an older remote edit", () => {
+  const merged = mergeVault(
+    {
+      notes: [],
+      folders: [],
+      dirtyNoteIds: [],
+      pendingDeletes: ["n1"],
+      pendingDeleteAt: { n1: 90 },
+      dirtyFolders: false,
+    },
+    {
+      notes: [
+        {
+          id: "n1",
+          title: "Old remote",
+          content: "gone",
+          folderId: null,
+          pinned: false,
+          kind: "markdown",
+          drawing: { strokes: [] },
+          createdAt: 1,
+          updatedAt: 20,
+        },
+      ],
+      deletedIds: [],
+      folders: null,
+    },
+  );
+  assert.equal(merged.notes.length, 0);
+  assert.deepEqual(merged.pendingDeletes, ["n1"]);
+  assert.equal(merged.pendingDeleteAt.n1, 90);
 });
