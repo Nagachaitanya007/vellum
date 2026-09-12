@@ -1,5 +1,11 @@
-import { loadVault, noteToPayload, saveVaultChanges } from "./api";
+import { loadVault, saveVaultChanges } from "./api";
 import { mergeVault } from "./merge";
+import {
+  acknowledgeUpload,
+  captureDirty,
+  reconcileMerge,
+  type SyncSlice,
+} from "./sync-engine";
 import { useNotesStore } from "./store";
 import type { SyncStatus } from "./types";
 
@@ -26,38 +32,24 @@ function setStatus(status: SyncStatus, extra?: { lastSyncedAt?: number | null })
   });
 }
 
-function applyMerged(
-  merged: ReturnType<typeof mergeVault>,
-) {
-  const current = useNotesStore.getState();
-  const activeStillThere = merged.notes.some((note) => note.id === current.activeId);
-  useNotesStore.setState({
-    notes: merged.notes,
-    folders: merged.folders,
-    dirtyNoteIds: merged.dirtyNoteIds,
-    pendingDeletes: merged.pendingDeletes,
-    dirtyFolders: merged.dirtyFolders,
-    activeId: activeStillThere ? current.activeId : (merged.notes[0]?.id ?? null),
-  });
+function toSlice(): SyncSlice {
+  const state = useNotesStore.getState();
+  return {
+    notes: state.notes,
+    folders: state.folders,
+    dirtyNoteIds: state.dirtyNoteIds,
+    pendingDeletes: state.pendingDeletes,
+    dirtyFolders: state.dirtyFolders,
+    foldersUpdatedAt: state.foldersUpdatedAt,
+    activeId: state.activeId,
+  };
 }
 
 async function pushCurrentDirty() {
-  const state = useNotesStore.getState();
-  const notes = state.notes.filter((note) => state.dirtyNoteIds.includes(note.id));
-  const deletedAt = Date.now();
-  if (!notes.length && !state.pendingDeletes.length && !state.dirtyFolders) return;
-  await saveVaultChanges({
-    data: {
-      notes: notes.map(noteToPayload),
-      deleted: state.pendingDeletes.map((id) => ({ id, deletedAt })),
-      folders: state.dirtyFolders ? state.folders : undefined,
-    },
-  });
-  useNotesStore.setState({
-    dirtyNoteIds: [],
-    pendingDeletes: [],
-    dirtyFolders: false,
-  });
+  const captured = captureDirty(toSlice());
+  if (!captured) return;
+  await saveVaultChanges({ data: captured.payload });
+  useNotesStore.setState(acknowledgeUpload(toSlice(), captured.batch));
 }
 
 export async function flushVaultNow() {
@@ -66,32 +58,22 @@ export async function flushVaultNow() {
   setStatus("syncing");
   try {
     const snapshot = await loadVault();
-    const merged = mergeVault(
-      {
-        notes: useNotesStore.getState().notes,
-        folders: useNotesStore.getState().folders,
-        dirtyNoteIds: useNotesStore.getState().dirtyNoteIds,
-        pendingDeletes: useNotesStore.getState().pendingDeletes,
-        dirtyFolders: useNotesStore.getState().dirtyFolders,
-      },
-      snapshot,
-    );
-    applyMerged(merged);
+    const merged = mergeVault(toSlice(), snapshot);
+    const reconciled = reconcileMerge(merged, toSlice());
+    useNotesStore.setState({
+      notes: reconciled.notes,
+      folders: reconciled.folders,
+      dirtyNoteIds: reconciled.dirtyNoteIds,
+      pendingDeletes: reconciled.pendingDeletes,
+      dirtyFolders: reconciled.dirtyFolders,
+      foldersUpdatedAt: reconciled.foldersUpdatedAt,
+      activeId: reconciled.activeId,
+    });
 
-    if (merged.toPush.length || merged.toDelete.length || merged.foldersToPush) {
-      const deletedAt = Date.now();
-      await saveVaultChanges({
-        data: {
-          notes: merged.toPush.map(noteToPayload),
-          deleted: merged.toDelete.map((id) => ({ id, deletedAt })),
-          folders: merged.foldersToPush ?? undefined,
-        },
-      });
-      useNotesStore.setState({
-        dirtyNoteIds: [],
-        pendingDeletes: [],
-        dirtyFolders: false,
-      });
+    const captured = captureDirty(toSlice());
+    if (captured) {
+      await saveVaultChanges({ data: captured.payload });
+      useNotesStore.setState(acknowledgeUpload(toSlice(), captured.batch));
     }
 
     setStatus("synced", { lastSyncedAt: Date.now() });

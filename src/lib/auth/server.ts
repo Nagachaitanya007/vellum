@@ -21,6 +21,7 @@ import { ensureDbReady, getLibsql } from "../db";
 import { emailAndPasswordEnabled } from "./email-password";
 import { GATE_PROVIDER_ID, gateIdentitySessions } from "./gate-session.server";
 import { libsqlDialect } from "./libsql-dialect";
+import { resolveTrustedOrigins, useSecureCookies } from "./origins";
 
 void ensureDbReady();
 
@@ -84,15 +85,13 @@ const baseURL = explicitBaseURL ?? {
   fallback: "http://localhost:8080",
 };
 
-const trustedOrigins: string[] = explicitBaseURL
-  ? [explicitBaseURL, ...LOCAL_DEV_ORIGINS]
-  : [
-      ...OPTIONAL_PREVIEW_HOSTS,
-      ...OPTIONAL_PREVIEW_HOSTS.flatMap((host) => [`https://${host}`, `http://${host}`]),
-      ...LOCAL_DEV_ORIGINS,
-    ];
+const trustedOrigins: string[] = resolveTrustedOrigins(
+  explicitBaseURL,
+  LOCAL_DEV_ORIGINS,
+  OPTIONAL_PREVIEW_HOSTS,
+);
 
-const secureCookies = Boolean(explicitBaseURL?.startsWith("https://"));
+const secureCookies = useSecureCookies(explicitBaseURL, Boolean(env("VERCEL")));
 
 const database = {
   dialect: libsqlDialect(() => getLibsql()),
@@ -117,7 +116,11 @@ export const auth = betterAuth({
       requireLocalEmailVerified: false,
     },
   },
-  session: { cookieCache: { enabled: true, maxAge: 300 } },
+  session: {
+    expiresIn: 60 * 60 * 24 * 7,
+    updateAge: 60 * 60 * 24,
+    cookieCache: { enabled: true, maxAge: 300 },
+  },
   ...(emailAndPasswordEnabled ? { emailAndPassword: { enabled: true } } : {}),
   ...(googleAuthConfigured
     ? {

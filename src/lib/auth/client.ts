@@ -1,6 +1,7 @@
 import { createAuthClient } from "better-auth/react";
 import { runPreSignInSignOut, runSignOut } from "../../../scripts/sign-out-plan.mjs";
 import { AUTH_PROVIDERS } from "./providers";
+import { safeRedirectPath } from "./redirect";
 
 /**
  * Better Auth client for this React SPA.
@@ -65,8 +66,8 @@ export async function signIn(
   providerId: string = "google",
   opts: { callbackURL?: string; errorCallbackURL?: string } = {},
 ): Promise<void> {
-  const callbackURL = opts.callbackURL ?? "/";
-  const errorCallbackURL = opts.errorCallbackURL ?? "/";
+  const callbackURL = safeRedirectPath(opts.callbackURL);
+  const errorCallbackURL = safeRedirectPath(opts.errorCallbackURL);
   const provider = "google" as const;
 
   const popup = inLivePreview() ? openSignInPopup(provider) : null;

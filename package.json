@@ -16,7 +16,7 @@
     "preview:stop": "node scripts/preview.mjs stop",
     "typecheck": "tsc --noEmit",
     "check:auth": "node scripts/check-auth-invariant.mjs",
-    "test": "node --test 'scripts/**/*.test.mjs' scripts/verify-vault-isolation.mjs scripts/verify-no-broker.mjs && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/notes/sync.test.ts",
+    "test": "node --test 'scripts/**/*.test.mjs' scripts/verify-vault-isolation.mjs scripts/verify-no-broker.mjs && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts src/lib/auth/hardening.test.ts src/lib/notes/sync.test.ts src/lib/notes/vault-ops.test.ts src/lib/db-config.test.ts",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

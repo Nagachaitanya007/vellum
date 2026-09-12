@@ -9,6 +9,8 @@ import {
 } from "./helpers";
 import { DEFAULT_GRAPH_STYLE, normalizeGraphStyle } from "./graph-style";
 import { DEFAULT_FOLDERS, seedNotes } from "./seed";
+import { nextAdoptVaultUser, reconcileMerge } from "./sync-engine";
+import { mergeVault } from "./merge";
 import type {
   CreateNoteInput,
   Drawing,
@@ -99,9 +101,11 @@ type NotesState = {
   dirtyNoteIds: string[];
   pendingDeletes: string[];
   dirtyFolders: boolean;
+  foldersUpdatedAt: number;
   syncStatus: SyncStatus;
   lastSyncedAt: number | null;
   vaultOwnerId: string | null;
+  lastVaultOwnerId: string | null;
   adoptVaultUser: (userId: string | null) => void;
   createNote: (input?: CreateNoteInput) => string;
   deleteNote: (id: string) => void;
@@ -142,7 +146,9 @@ type PersistedSlice = {
   dirtyNoteIds?: string[];
   pendingDeletes?: string[];
   dirtyFolders?: boolean;
+  foldersUpdatedAt?: number;
   vaultOwnerId?: string | null;
+  lastVaultOwnerId?: string | null;
 };
 
 function withDirty(ids: string[], id: string): string[] {
@@ -183,7 +189,9 @@ function applyPersisted(data: PersistedSlice) {
       dirtyNoteIds: [],
       pendingDeletes: [],
       dirtyFolders: true,
+      foldersUpdatedAt: Date.now(),
       vaultOwnerId: null,
+      lastVaultOwnerId: null,
     });
     return;
   }
@@ -207,7 +215,14 @@ function applyPersisted(data: PersistedSlice) {
     dirtyNoteIds: Array.isArray(data.dirtyNoteIds) ? data.dirtyNoteIds : [],
     pendingDeletes: Array.isArray(data.pendingDeletes) ? data.pendingDeletes : [],
     dirtyFolders: Boolean(data.dirtyFolders),
+    foldersUpdatedAt: typeof data.foldersUpdatedAt === "number" ? data.foldersUpdatedAt : 0,
     vaultOwnerId: typeof data.vaultOwnerId === "string" ? data.vaultOwnerId : null,
+    lastVaultOwnerId:
+      typeof data.lastVaultOwnerId === "string"
+        ? data.lastVaultOwnerId
+        : typeof data.vaultOwnerId === "string"
+          ? data.vaultOwnerId
+          : null,
   });
 }
 
@@ -271,44 +286,43 @@ export const useNotesStore = create<NotesState>()(
       dirtyNoteIds: [],
       pendingDeletes: [],
       dirtyFolders: false,
+      foldersUpdatedAt: 0,
       syncStatus: "local",
       lastSyncedAt: null,
       vaultOwnerId: null,
+      lastVaultOwnerId: null,
 
       setHasHydrated: (value) => set({ hasHydrated: value }),
 
       adoptVaultUser: (userId) => {
-        const current = get().vaultOwnerId;
-        if (current === userId) return;
-        if (userId && current && current !== userId) {
+        const adopted = nextAdoptVaultUser(
+          {
+            vaultOwnerId: get().vaultOwnerId,
+            lastVaultOwnerId: get().lastVaultOwnerId,
+          },
+          userId,
+        );
+        if (!adopted.wipe) {
           set({
-            notes: [],
-            folders: [],
-            activeId: null,
-            dirtyNoteIds: [],
-            pendingDeletes: [],
-            dirtyFolders: false,
-            vaultOwnerId: userId,
-            initialized: true,
-            syncStatus: "syncing",
+            vaultOwnerId: adopted.vaultOwnerId,
+            lastVaultOwnerId: adopted.lastVaultOwnerId,
+            syncStatus: adopted.vaultOwnerId ? "syncing" : "local",
           });
           return;
         }
-        if (userId && !current) {
-          set({
-            notes: [],
-            folders: [],
-            activeId: null,
-            dirtyNoteIds: [],
-            pendingDeletes: [],
-            dirtyFolders: false,
-            vaultOwnerId: userId,
-            initialized: true,
-            syncStatus: "syncing",
-          });
-          return;
-        }
-        set({ vaultOwnerId: userId, syncStatus: userId ? "syncing" : "local" });
+        set({
+          notes: [],
+          folders: [],
+          activeId: null,
+          dirtyNoteIds: [],
+          pendingDeletes: [],
+          dirtyFolders: false,
+          foldersUpdatedAt: 0,
+          vaultOwnerId: adopted.vaultOwnerId,
+          lastVaultOwnerId: adopted.lastVaultOwnerId,
+          initialized: true,
+          syncStatus: "syncing",
+        });
       },
 
       createNote: (input = {}) => {
@@ -428,6 +442,7 @@ export const useNotesStore = create<NotesState>()(
           filter: { type: "folder", id: folder.id },
           workspace: "notes",
           dirtyFolders: true,
+          foldersUpdatedAt: Date.now(),
         }));
         return folder.id;
       },
@@ -449,6 +464,7 @@ export const useNotesStore = create<NotesState>()(
             notes: sortNotes(notes),
             filter,
             dirtyFolders: true,
+            foldersUpdatedAt: Date.now(),
             dirtyNoteIds: touched.reduce(withDirty, state.dirtyNoteIds),
           };
         });
@@ -527,7 +543,9 @@ export const useNotesStore = create<NotesState>()(
         dirtyNoteIds: state.dirtyNoteIds,
         pendingDeletes: state.pendingDeletes,
         dirtyFolders: state.dirtyFolders,
+        foldersUpdatedAt: state.foldersUpdatedAt,
         vaultOwnerId: state.vaultOwnerId,
+        lastVaultOwnerId: state.lastVaultOwnerId,
       }),
     },
   ),
@@ -544,3 +562,72 @@ export function useFolderName(folderId: string | null): string {
 }
 
 export { displayTitle };
+
+const STORAGE_EVENT_KEY = STORAGE_KEY;
+
+function ingestOtherTab(raw: string) {
+  try {
+    const parsed = JSON.parse(raw) as { state?: PersistedSlice };
+    const data = parsed.state;
+    if (!data) return;
+    const current = useNotesStore.getState();
+    const foreignOwner =
+      typeof data.vaultOwnerId === "string" ? data.vaultOwnerId : null;
+    if (
+      foreignOwner &&
+      current.vaultOwnerId &&
+      foreignOwner !== current.vaultOwnerId
+    ) {
+      return;
+    }
+    const incoming = Array.isArray(data.notes) ? data.notes.map(normalizeNote) : [];
+    const folders =
+      Array.isArray(data.folders) && data.folders.length > 0 ? data.folders : current.folders;
+    const merged = mergeVault(
+      {
+        notes: current.notes,
+        folders: current.folders,
+        dirtyNoteIds: current.dirtyNoteIds,
+        pendingDeletes: current.pendingDeletes,
+        dirtyFolders: current.dirtyFolders,
+        foldersUpdatedAt: current.foldersUpdatedAt,
+      },
+      {
+        notes: incoming,
+        deletedIds: Array.isArray(data.pendingDeletes) ? data.pendingDeletes : [],
+        folders,
+        foldersUpdatedAt:
+          typeof data.foldersUpdatedAt === "number" ? data.foldersUpdatedAt : 0,
+      },
+    );
+    const latest = useNotesStore.getState();
+    const reconciled = reconcileMerge(merged, {
+      notes: latest.notes,
+      folders: latest.folders,
+      dirtyNoteIds: latest.dirtyNoteIds,
+      pendingDeletes: latest.pendingDeletes,
+      dirtyFolders: latest.dirtyFolders,
+      foldersUpdatedAt: latest.foldersUpdatedAt,
+      activeId: latest.activeId,
+    });
+    useNotesStore.setState({
+      notes: reconciled.notes,
+      folders: reconciled.folders,
+      dirtyNoteIds: reconciled.dirtyNoteIds,
+      pendingDeletes: reconciled.pendingDeletes,
+      dirtyFolders: reconciled.dirtyFolders,
+      foldersUpdatedAt: reconciled.foldersUpdatedAt,
+      activeId: reconciled.activeId,
+    });
+  } catch {
+    /* ignore malformed persist from another tab */
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (event) => {
+    if (event.key !== STORAGE_EVENT_KEY || !event.newValue) return;
+    ingestOtherTab(event.newValue);
+  });
+}
+

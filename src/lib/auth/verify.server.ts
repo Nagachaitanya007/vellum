@@ -1,5 +1,6 @@
 import { getRequest } from "@tanstack/react-start/server";
 import { isRemoteDatabase } from "../db";
+import { allowSharedDevUser } from "./dev-user";
 import { gateIdentityEnabled } from "./gate-identity.server";
 import { auth, authConfigured } from "./server";
 
@@ -56,14 +57,20 @@ export async function getSessionUser(bearerToken?: string): Promise<VerifiedUser
  * - Auth disabled + local file DB -> shared dev user id (local-only).
  */
 export async function requireUserId(bearerToken?: string): Promise<string> {
-  if (!authConfigured && !gateIdentityEnabled()) {
-    if (databaseConfigured) {
-      throw new Error(
-        "Auth is disabled (VITE_AUTH_ENABLED=false) but a remote Turso database is set — " +
-          "refusing to fall back to the shared dev user against a real database.",
-      );
-    }
+  if (
+    allowSharedDevUser({
+      authConfigured,
+      gateIdentityEnabled: gateIdentityEnabled(),
+      remoteDatabase: databaseConfigured,
+      vercel: Boolean(process.env.VERCEL?.trim()),
+    })
+  ) {
     return DEV_USER_ID;
+  }
+  if (!authConfigured && !gateIdentityEnabled()) {
+    throw new Error(
+      "Auth is disabled but a remote database or production host is set — refusing the shared dev user.",
+    );
   }
   const user = await getSessionUser(bearerToken);
   if (!user) throw new UnauthorizedError();

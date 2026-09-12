@@ -2,44 +2,15 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { createClient, type Client, type InValue } from "@libsql/client";
 import { pendingMigrations } from "../../scripts/migration-plan.mjs";
+import { resolveTursoConfig, type LibsqlConfig } from "./db-config";
 
 /** Which libSQL backend is active. */
 export type DbSource = "turso" | "file";
 
-function env(key: string): string | undefined {
-  const value = typeof process !== "undefined" ? process.env[key]?.trim() : undefined;
-  return value ? value : undefined;
-}
+export type { LibsqlConfig };
 
-export type LibsqlConfig = {
-  url: string;
-  authToken?: string;
-  remote: boolean;
-};
-
-function isRemoteUrl(url: string): boolean {
-  return /^(libsql|https|http|wss|ws):/i.test(url);
-}
-
-/**
- * Turso (libSQL) when `TURSO_DATABASE_URL` is set; otherwise a local SQLite
- * file so `npm run dev` works with zero cloud config.
- *
- * On Vercel, a remote Turso URL is required — a file database does not persist
- * across serverless invocations.
- */
 export function tursoConfig(): LibsqlConfig {
-  const url = env("TURSO_DATABASE_URL") ?? env("LIBSQL_URL");
-  const authToken = env("TURSO_AUTH_TOKEN") ?? env("LIBSQL_AUTH_TOKEN");
-  if (url) {
-    return { url, authToken: authToken || undefined, remote: isRemoteUrl(url) };
-  }
-  if (env("VERCEL")) {
-    throw new Error(
-      "TURSO_DATABASE_URL is required in production. Create a Turso database and set TURSO_DATABASE_URL + TURSO_AUTH_TOKEN (see .env.example).",
-    );
-  }
-  return { url: "file:.data/vellum.db", remote: false };
+  return resolveTursoConfig(process.env);
 }
 
 export function isRemoteDatabase(): boolean {
@@ -173,7 +144,7 @@ const globalBoot = globalThis as typeof globalThis & {
 if (typeof window === "undefined") {
   globalBoot.__libsqlBootstrapPromise__ ??= ensureDbReady().catch((err) => {
     globalBoot.__libsqlBootstrapPromise__ = undefined;
-    console.error("[db] libSQL bootstrap failed:", err);
+    console.error("[db] libSQL bootstrap failed:", err instanceof Error ? err.message : err);
     throw err;
   });
 }

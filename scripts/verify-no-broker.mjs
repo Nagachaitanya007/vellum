@@ -14,7 +14,9 @@ const files = [
   "src/lib/auth/client.ts",
   "src/lib/auth/popup.server.ts",
   "src/lib/db.ts",
+  "src/lib/db-config.ts",
   "src/lib/notes/api.ts",
+  "src/lib/notes/vault-ops.ts",
   "scripts/migrate.mjs",
 ];
 

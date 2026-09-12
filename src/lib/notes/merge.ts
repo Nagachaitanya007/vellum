@@ -12,6 +12,34 @@ export type RemoteNote = {
   updatedAt: number;
 };
 
+export type MergeInput = {
+  notes: Note[];
+  folders: Folder[];
+  dirtyNoteIds: string[];
+  pendingDeletes: string[];
+  dirtyFolders: boolean;
+  foldersUpdatedAt?: number;
+};
+
+export type MergeRemote = {
+  notes: RemoteNote[];
+  deletedIds: string[];
+  folders: Folder[] | null;
+  foldersUpdatedAt?: number | null;
+};
+
+export type MergeResult = {
+  notes: Note[];
+  folders: Folder[];
+  toPush: Note[];
+  toDelete: string[];
+  foldersToPush: Folder[] | null;
+  dirtyNoteIds: string[];
+  pendingDeletes: string[];
+  dirtyFolders: boolean;
+  foldersUpdatedAt: number;
+};
+
 function sortNotes(notes: Note[]): Note[] {
   return [...notes].sort((a, b) => {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
@@ -34,20 +62,7 @@ function payloadToNote(payload: RemoteNote): Note {
 }
 
 /** Last-write-wins merge. Local dirty rows with a newer (or equal) updatedAt are kept and re-pushed. */
-export function mergeVault(
-  local: {
-    notes: Note[];
-    folders: Folder[];
-    dirtyNoteIds: string[];
-    pendingDeletes: string[];
-    dirtyFolders: boolean;
-  },
-  remote: {
-    notes: RemoteNote[];
-    deletedIds: string[];
-    folders: Folder[] | null;
-  },
-) {
+export function mergeVault(local: MergeInput, remote: MergeRemote): MergeResult {
   const dirty = new Set(local.dirtyNoteIds);
   const deleting = new Set(local.pendingDeletes);
   const remoteDeleted = new Set(remote.deletedIds);
@@ -88,20 +103,28 @@ export function mergeVault(
     }
   }
 
+  const localFolderAt = local.foldersUpdatedAt ?? 0;
+  const remoteFolderAt = remote.foldersUpdatedAt ?? 0;
   let folders = local.folders;
   let foldersToPush: Folder[] | null = null;
   let dirtyFolders = local.dirtyFolders;
-  if (local.dirtyFolders) {
-    foldersToPush = local.folders;
-  } else if (remote.folders) {
-    folders = remote.folders.length > 0 ? remote.folders : local.folders;
-    if (remote.folders.length === 0 && local.folders.length > 0) {
-      foldersToPush = local.folders;
-      dirtyFolders = true;
-    }
-  } else if (local.folders.length > 0) {
+  let foldersUpdatedAt = localFolderAt;
+
+  if (local.dirtyFolders && localFolderAt >= remoteFolderAt) {
+    folders = local.folders;
     foldersToPush = local.folders;
     dirtyFolders = true;
+    foldersUpdatedAt = localFolderAt;
+  } else if (remote.folders != null) {
+    folders = remote.folders;
+    foldersToPush = null;
+    dirtyFolders = false;
+    foldersUpdatedAt = remoteFolderAt;
+  } else if (local.folders.length > 0) {
+    folders = local.folders;
+    foldersToPush = local.folders;
+    dirtyFolders = true;
+    foldersUpdatedAt = localFolderAt || Date.now();
   }
 
   return {
@@ -113,5 +136,6 @@ export function mergeVault(
     dirtyNoteIds: stillDirty,
     pendingDeletes: stillDelete,
     dirtyFolders,
+    foldersUpdatedAt,
   };
 }
