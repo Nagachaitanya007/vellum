@@ -7,11 +7,13 @@ import {
   findNoteByTitle,
   sortNotes,
 } from "./helpers";
+import { DEFAULT_GRAPH_STYLE, normalizeGraphStyle } from "./graph-style";
 import { DEFAULT_FOLDERS, seedNotes } from "./seed";
 import type {
   CreateNoteInput,
   Drawing,
   Folder,
+  GraphStyle,
   LibraryFilter,
   ListMode,
   Note,
@@ -91,6 +93,7 @@ type NotesState = {
   workspace: WorkspaceView;
   theme: ThemeMode;
   listMode: ListMode;
+  graphStyle: GraphStyle;
   initialized: boolean;
   hasHydrated: boolean;
   dirtyNoteIds: string[];
@@ -119,6 +122,7 @@ type NotesState = {
   setTheme: (theme: ThemeMode) => void;
   toggleTheme: () => void;
   setListMode: (mode: ListMode) => void;
+  setGraphStyle: (patch: Partial<GraphStyle>) => void;
   updateDrawing: (id: string, drawing: Drawing) => void;
   setHasHydrated: (value: boolean) => void;
 };
@@ -131,6 +135,7 @@ type PersistedSlice = {
   previewMode?: PreviewMode;
   theme?: ThemeMode;
   listMode?: ListMode;
+  graphStyle?: Partial<GraphStyle>;
   initialized?: boolean;
   dirtyNoteIds?: string[];
   pendingDeletes?: string[];
@@ -155,6 +160,7 @@ function applyPersisted(data: PersistedSlice) {
     Array.isArray(data.folders) && data.folders.length > 0 ? data.folders : DEFAULT_FOLDERS;
   const theme: ThemeMode = data.theme === "light" ? "light" : "dark";
   const listMode: ListMode = data.listMode === "table" ? "table" : "list";
+  const graphStyle = normalizeGraphStyle(data.graphStyle);
   const previewMode: PreviewMode =
     data.previewMode === "preview" || data.previewMode === "split" ? data.previewMode : "edit";
 
@@ -168,6 +174,7 @@ function applyPersisted(data: PersistedSlice) {
       previewMode,
       theme,
       listMode,
+      graphStyle,
       initialized: true,
       hasHydrated: true,
       dirtyNoteIds: [],
@@ -190,6 +197,7 @@ function applyPersisted(data: PersistedSlice) {
     previewMode,
     theme,
     listMode,
+    graphStyle,
     initialized: true,
     hasHydrated: true,
     dirtyNoteIds: Array.isArray(data.dirtyNoteIds) ? data.dirtyNoteIds : [],
@@ -252,6 +260,7 @@ export const useNotesStore = create<NotesState>()(
       workspace: "notes",
       theme: "dark",
       listMode: "list",
+      graphStyle: { ...DEFAULT_GRAPH_STYLE },
       initialized: false,
       hasHydrated: false,
       dirtyNoteIds: [],
@@ -455,6 +464,11 @@ export const useNotesStore = create<NotesState>()(
       },
 
       setListMode: (mode) => set({ listMode: mode }),
+
+      setGraphStyle: (patch) =>
+        set((state) => ({
+          graphStyle: normalizeGraphStyle({ ...state.graphStyle, ...patch }),
+        })),
     }),
     {
       name: STORAGE_KEY,
@@ -468,6 +482,7 @@ export const useNotesStore = create<NotesState>()(
         previewMode: state.previewMode,
         theme: state.theme,
         listMode: state.listMode,
+        graphStyle: state.graphStyle,
         initialized: state.initialized,
         dirtyNoteIds: state.dirtyNoteIds,
         pendingDeletes: state.pendingDeletes,

@@ -23,6 +23,7 @@ export type DrawTool =
   | "text"
   | "hand";
 export type DrawColor = "ink" | "red" | "blue" | "green" | "highlight";
+export type DrawFill = "none" | "tint" | "solid";
 export type StrokeTool =
   | "pen"
   | "highlighter"
@@ -40,10 +41,26 @@ export type Stroke = {
   size: number;
   points: number[];
   text?: string;
+  fill?: DrawFill;
 };
 
 export type Drawing = {
   strokes: Stroke[];
+};
+
+export type GraphNodeShape = "circle" | "square" | "diamond" | "hex";
+export type GraphColorBy = "folder" | "kind" | "pin" | "mono";
+export type GraphSizeBy = "words" | "links" | "uniform";
+export type GraphEdgeStyle = "line" | "arrow" | "dashed";
+export type GraphEdgeColor = "muted" | "ink" | "red" | "blue" | "green";
+
+export type GraphStyle = {
+  nodeShape: GraphNodeShape;
+  colorBy: GraphColorBy;
+  sizeBy: GraphSizeBy;
+  edgeStyle: GraphEdgeStyle;
+  edgeColor: GraphEdgeColor;
+  edgeWidth: 1 | 2 | 3;
 };
 
 export type Note = {

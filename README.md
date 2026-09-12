@@ -8,9 +8,9 @@ Sign in with Google or X to keep the same vault on your phone and computer. With
 
 - Folders, pins, tags, daily notes, and a paper writing surface
 - Wiki links (`[[page]]`), backlinks, unlinked mentions, and `![[page]]` embeds
-- Vault graph (pan, zoom, click to open)
+- Vault graph with configurable node shape, color, size, and arrows
 - New note asks for a **markdown page** or a **canvas board**
-- Canvas boards: select/move, pen, highlighter, shapes, text, undo/redo, export PNG or JPEG
+- Canvas boards: labels inside shapes, colorful diagram templates, select/move, pen, undo/redo, PNG/JPEG
 - Find and replace in the page
 - Light and dark
 - Slash commands (`/`) for headings, lists, callouts, tables, toggles, templates, plus sequence diagrams, flowcharts, math, highlight, and today’s date

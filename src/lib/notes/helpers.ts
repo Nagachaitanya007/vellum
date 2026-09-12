@@ -376,26 +376,47 @@ export function filterLabel(filter: LibraryFilter, folders: { id: string; name: 
 }
 
 export function buildGraph(notes: Note[]): {
-  nodes: { id: string; title: string; pinned: boolean }[];
+  nodes: {
+    id: string;
+    title: string;
+    pinned: boolean;
+    folderId: string | null;
+    kind: Note["kind"];
+    words: number;
+    links: number;
+  }[];
   edges: { from: string; to: string }[];
 } {
   const nodes = notes.map((note) => ({
     id: note.id,
     title: displayTitle(note.title),
     pinned: note.pinned,
+    folderId: note.folderId,
+    kind: note.kind,
+    words:
+      note.kind === "canvas"
+        ? Math.max(8, note.drawing.strokes.length * 6)
+        : wordCount(note.content),
+    links: 0,
   }));
   const byTitle = new Map(nodes.map((node) => [node.title.toLowerCase(), node.id]));
   const edges: { from: string; to: string }[] = [];
   const seen = new Set<string>();
+  const degree = new Map<string, number>();
   for (const note of notes) {
     for (const link of extractWikiLinks(note.content)) {
       const to = byTitle.get(link.toLowerCase());
       if (!to || to === note.id) continue;
-      const key = note.id < to ? `${note.id}>${to}` : `${to}>${note.id}`;
+      const key = `${note.id}>${to}`;
       if (seen.has(key)) continue;
       seen.add(key);
       edges.push({ from: note.id, to });
+      degree.set(note.id, (degree.get(note.id) ?? 0) + 1);
+      degree.set(to, (degree.get(to) ?? 0) + 1);
     }
+  }
+  for (const node of nodes) {
+    node.links = degree.get(node.id) ?? 0;
   }
   return { nodes, edges };
 }

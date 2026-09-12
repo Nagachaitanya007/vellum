@@ -1,5 +1,5 @@
 import { downloadBlob, safeSegment } from "./export";
-import type { DrawColor, Drawing, Stroke, StrokeTool } from "./types";
+import type { DrawColor, DrawFill, Drawing, Stroke, StrokeTool } from "./types";
 
 const STROKE_TOOLS: StrokeTool[] = [
   "pen",
@@ -11,6 +11,8 @@ const STROKE_TOOLS: StrokeTool[] = [
   "arrow",
   "text",
 ];
+
+const FILLS: DrawFill[] = ["none", "tint", "solid"];
 
 export function emptyDrawing(): Drawing {
   return { strokes: [] };
@@ -41,14 +43,43 @@ export function textFontSize(size: number): number {
   return Math.max(16, size * 8);
 }
 
+export function labelFont(px: number): string {
+  return `500 ${Math.round(px)}px "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif`;
+}
+
+export function wrapTextLines(text: string, maxWidth: number, fontSize: number): string[] {
+  const charW = fontSize * 0.56;
+  const maxChars = Math.max(4, Math.floor(maxWidth / charW));
+  const out: string[] = [];
+  for (const paragraph of text.split("\n")) {
+    const words = paragraph.trim().length === 0 ? [""] : paragraph.split(/\s+/);
+    let line = "";
+    for (const word of words) {
+      const next = line ? `${line} ${word}` : word;
+      if (next.length > maxChars && line) {
+        out.push(line);
+        line = word;
+      } else {
+        line = next;
+      }
+    }
+    out.push(line);
+  }
+  return out.length > 0 ? out : [""];
+}
+
+export function isClosedShape(tool: StrokeTool): boolean {
+  return tool === "rect" || tool === "ellipse" || tool === "diamond";
+}
+
+export function shapeLabelSize(width: number, height: number): number {
+  return Math.max(13, Math.min(22, Math.min(width, height) * 0.22));
+}
+
 export function strokeHits(stroke: Stroke, x: number, y: number, radius: number): boolean {
   if (stroke.tool === "text") {
-    const tx = stroke.points[0] ?? 0;
-    const ty = stroke.points[1] ?? 0;
-    const font = textFontSize(stroke.size);
-    const w = Math.max(40, (stroke.text?.length ?? 1) * font * 0.55);
-    const h = font * 1.3;
-    return x >= tx - 4 && x <= tx + w && y >= ty - h && y <= ty + 8;
+    const box = strokeBounds(stroke);
+    return x >= box.x - 4 && x <= box.x + box.w && y >= box.y - 4 && y <= box.y + box.h + 8;
   }
   const bounds = strokeBounds(stroke);
   if (
@@ -57,9 +88,7 @@ export function strokeHits(stroke: Stroke, x: number, y: number, radius: number)
     y >= bounds.y - radius &&
     y <= bounds.y + bounds.h + radius
   ) {
-    if (stroke.tool === "rect" || stroke.tool === "ellipse" || stroke.tool === "diamond") {
-      return true;
-    }
+    if (isClosedShape(stroke.tool)) return true;
   }
   const pts = stroke.points;
   for (let i = 0; i < pts.length; i += 2) {
@@ -93,9 +122,11 @@ export function strokeBounds(stroke: Stroke): { x: number; y: number; w: number;
     const x = stroke.points[0] ?? 0;
     const y = stroke.points[1] ?? 0;
     const font = textFontSize(stroke.size);
-    const w = Math.max(40, (stroke.text?.length ?? 1) * font * 0.55);
-    const h = font * 1.3;
-    return { x, y: y - h, w, h };
+    const lines = wrapTextLines(stroke.text ?? "", 640, font);
+    const longest = lines.reduce((max, line) => Math.max(max, line.length), 1);
+    const w = Math.max(40, longest * font * 0.55);
+    const h = Math.max(font, lines.length * font * 1.28);
+    return { x, y: y - font, w, h };
   }
   const pts = stroke.points;
   let minX = Infinity;
@@ -136,6 +167,14 @@ export function translateStroke(stroke: Stroke, dx: number, dy: number): Stroke 
   return { ...stroke, points };
 }
 
+export function placeStrokesAt(strokes: Stroke[], cx: number, cy: number): Stroke[] {
+  const box = drawingBounds({ strokes });
+  if (!box) return strokes;
+  const dx = cx - (box.x + box.w / 2);
+  const dy = cy - (box.y + box.h / 2);
+  return strokes.map((stroke) => translateStroke(stroke, dx, dy));
+}
+
 export function constrainEnd(
   tool: StrokeTool,
   x1: number,
@@ -153,7 +192,7 @@ export function constrainEnd(
     const len = Math.hypot(dx, dy);
     return { x: x1 + Math.cos(snap) * len, y: y1 + Math.sin(snap) * len };
   }
-  if (tool === "rect" || tool === "ellipse" || tool === "diamond") {
+  if (isClosedShape(tool)) {
     const dx = x2 - x1;
     const dy = y2 - y1;
     const side = Math.max(Math.abs(dx), Math.abs(dy));
@@ -180,6 +219,11 @@ function pointToSegment(
 }
 
 export const DRAW_COLORS: DrawColor[] = ["ink", "red", "blue", "green", "highlight"];
+export const DRAW_FILLS: { id: DrawFill; label: string }[] = [
+  { id: "none", label: "No fill" },
+  { id: "tint", label: "Tint" },
+  { id: "solid", label: "Solid" },
+];
 
 export function resolveDrawColor(color: DrawColor, ink: string): string {
   if (typeof document === "undefined") {
@@ -208,6 +252,11 @@ export function resolveDrawColor(color: DrawColor, ink: string): string {
     default:
       return ink;
   }
+}
+
+function paperColor(): string {
+  if (typeof document === "undefined") return "#1a1916";
+  return getComputedStyle(document.documentElement).getPropertyValue("--color-paper").trim() || "#1a1916";
 }
 
 export function paintGrid(
@@ -239,7 +288,38 @@ export function paintGrid(
   ctx.globalAlpha = 1;
 }
 
-export function paintStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, ink: string) {
+function paintLabel(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  cx: number,
+  cy: number,
+  maxW: number,
+  maxH: number,
+  fill: string,
+) {
+  const fontSize = shapeLabelSize(maxW, maxH);
+  const lines = wrapTextLines(text, maxW - 16, fontSize);
+  const lineH = fontSize * 1.25;
+  const total = lines.length * lineH;
+  ctx.save();
+  ctx.font = labelFont(fontSize);
+  ctx.fillStyle = fill;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  let y = cy - total / 2 + lineH / 2;
+  for (const line of lines) {
+    ctx.fillText(line, cx, y, Math.max(8, maxW - 12));
+    y += lineH;
+  }
+  ctx.restore();
+}
+
+export function paintStroke(
+  ctx: CanvasRenderingContext2D,
+  stroke: Stroke,
+  ink: string,
+  options?: { hideText?: boolean },
+) {
   const pts = stroke.points;
   if (pts.length < 2) return;
   const color = resolveDrawColor(stroke.color, ink);
@@ -251,14 +331,27 @@ export function paintStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, ink: 
   ctx.lineWidth = stroke.size;
 
   if (stroke.tool === "text") {
+    if (options?.hideText) {
+      ctx.globalAlpha = 1;
+      return;
+    }
+    const font = textFontSize(stroke.size);
+    const lines = wrapTextLines(stroke.text ?? "", 640, font);
     ctx.globalAlpha = 1;
-    ctx.font = `${textFontSize(stroke.size)}px "Newsreader", "Iowan Old Style", Palatino, serif`;
+    ctx.font = labelFont(font);
+    ctx.fillStyle = color;
+    ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
-    ctx.fillText(stroke.text ?? "", pts[0] ?? 0, pts[1] ?? 0);
+    let y = pts[1] ?? 0;
+    const x = pts[0] ?? 0;
+    for (const line of lines) {
+      ctx.fillText(line, x, y);
+      y += font * 1.28;
+    }
     return;
   }
 
-  if (stroke.tool === "rect" || stroke.tool === "ellipse" || stroke.tool === "diamond") {
+  if (isClosedShape(stroke.tool)) {
     const x1 = pts[0] ?? 0;
     const y1 = pts[1] ?? 0;
     const x2 = pts[2] ?? x1;
@@ -279,10 +372,20 @@ export function paintStroke(ctx: CanvasRenderingContext2D, stroke: Stroke, ink: 
       ctx.lineTo(left, top + h / 2);
       ctx.closePath();
     }
-    ctx.globalAlpha = 0.12;
-    ctx.fill();
+    const fill = FILLS.includes(stroke.fill as DrawFill) ? stroke.fill : "tint";
+    if (fill === "solid") {
+      ctx.globalAlpha = 0.92;
+      ctx.fill();
+    } else if (fill !== "none") {
+      ctx.globalAlpha = 0.22;
+      ctx.fill();
+    }
     ctx.globalAlpha = 1;
     ctx.stroke();
+    if (stroke.text && !options?.hideText) {
+      const labelFill = fill === "solid" ? paperColor() : color;
+      paintLabel(ctx, stroke.text, left + w / 2, top + h / 2, w, h, labelFill);
+    }
     return;
   }
 

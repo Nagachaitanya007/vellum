@@ -4,6 +4,7 @@ import {
   Eraser,
   Hand,
   Highlighter,
+  LayoutTemplate,
   Minus,
   MousePointer2,
   Pencil,
@@ -17,22 +18,28 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/tooltip";
+import { DIAGRAM_PRESETS } from "@/lib/notes/diagram-presets";
 import {
   DRAW_COLORS,
+  DRAW_FILLS,
   constrainEnd,
   emptyDrawing,
   exportDrawingImage,
   hitTopStroke,
+  isClosedShape,
   newStrokeId,
   paintGrid,
   paintSelection,
   paintStroke,
+  placeStrokesAt,
+  shapeLabelSize,
+  strokeBounds,
   textFontSize,
   translateStroke,
 } from "@/lib/notes/drawing";
 import { displayTitle } from "@/lib/notes/helpers";
 import { useNotesStore } from "@/lib/notes/store";
-import type { DrawColor, DrawTool, Drawing, Stroke, StrokeTool } from "@/lib/notes/types";
+import type { DrawColor, DrawFill, DrawTool, Drawing, Stroke, StrokeTool } from "@/lib/notes/types";
 import { cn } from "@/lib/utils";
 
 const TOOLS: { id: DrawTool; label: string; icon: typeof Pencil; key?: string }[] = [
@@ -52,7 +59,20 @@ const TOOLS: { id: DrawTool; label: string; icon: typeof Pencil; key?: string }[
 const SHAPE_TOOLS: StrokeTool[] = ["line", "rect", "ellipse", "diamond", "arrow"];
 const SIZES = [2, 4, 8];
 
-type TextEdit = { x: number; y: number; sx: number; sy: number; size: number; color: DrawColor };
+type TextEdit = {
+  strokeId?: string;
+  x: number;
+  y: number;
+  sx: number;
+  sy: number;
+  w: number;
+  h: number;
+  size: number;
+  color: DrawColor;
+  value: string;
+  shape: boolean;
+  font: number;
+};
 
 export function DrawCanvas({
   noteId,
@@ -71,20 +91,25 @@ export function DrawCanvas({
   const spaceRef = useRef(false);
   const toolRef = useRef<DrawTool>("select");
   const colorRef = useRef<DrawColor>("ink");
+  const fillRef = useRef<DrawFill>("tint");
   const sizeRef = useRef(2);
   const selectedRef = useRef<string | null>(null);
   const previewRef = useRef<Stroke | null>(null);
   const hiddenIdsRef = useRef<Set<string>>(new Set());
+  const hideTextIdRef = useRef<string | null>(null);
   const moveDeltaRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
   const undoRef = useRef<Drawing[]>([]);
   const redoRef = useRef<Drawing[]>([]);
   const markDirtyRef = useRef<() => void>(() => undefined);
+  const beginEditRef = useRef<(stroke: Stroke) => void>(() => undefined);
   const [tool, setTool] = useState<DrawTool>("select");
   const [color, setColor] = useState<DrawColor>("ink");
+  const [fill, setFill] = useState<DrawFill>("tint");
   const [size, setSize] = useState(2);
   const [textEdit, setTextEdit] = useState<TextEdit | null>(null);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  const [diagramsOpen, setDiagramsOpen] = useState(false);
   const undoFnRef = useRef<() => void>(() => undefined);
   const redoFnRef = useRef<() => void>(() => undefined);
   const deleteFnRef = useRef<() => void>(() => undefined);
@@ -92,6 +117,7 @@ export function DrawCanvas({
   drawingRef.current = drawing;
   toolRef.current = tool;
   colorRef.current = color;
+  fillRef.current = fill;
   sizeRef.current = size;
 
   function syncStacks() {
@@ -127,6 +153,35 @@ export function DrawCanvas({
     markDirtyRef.current();
   }
 
+  function beginTextEdit(stroke: Stroke) {
+    const cam = camRef.current;
+    const box = strokeBounds(stroke);
+    const shape = isClosedShape(stroke.tool);
+    const font = shape ? shapeLabelSize(box.w, box.h) : textFontSize(stroke.size);
+    hideTextIdRef.current = stroke.id;
+    selectedRef.current = stroke.id;
+    setTextEdit({
+      strokeId: stroke.id,
+      x: box.x,
+      y: box.y,
+      sx: shape
+        ? (box.x + box.w / 2) * cam.scale + cam.x
+        : (stroke.points[0] ?? 0) * cam.scale + cam.x,
+      sy: shape
+        ? (box.y + box.h / 2) * cam.scale + cam.y
+        : (stroke.points[1] ?? 0) * cam.scale + cam.y - font,
+      w: Math.max(72, box.w * cam.scale),
+      h: Math.max(32, box.h * cam.scale),
+      size: stroke.size,
+      color: stroke.color,
+      value: stroke.text ?? "",
+      shape,
+      font,
+    });
+    markDirtyRef.current();
+  }
+
+  beginEditRef.current = beginTextEdit;
   undoFnRef.current = undo;
   redoFnRef.current = redo;
   deleteFnRef.current = () => {
@@ -171,9 +226,19 @@ export function DrawCanvas({
         deleteFnRef.current();
         return;
       }
+      if (event.key === "Enter" && selectedRef.current) {
+        const selected = drawingRef.current.strokes.find((stroke) => stroke.id === selectedRef.current);
+        if (selected && (isClosedShape(selected.tool) || selected.tool === "text")) {
+          event.preventDefault();
+          beginEditRef.current(selected);
+          return;
+        }
+      }
       if (event.key === "Escape") {
         selectedRef.current = null;
+        hideTextIdRef.current = null;
         setTextEdit(null);
+        setDiagramsOpen(false);
         markDirtyRef.current();
         return;
       }
@@ -257,11 +322,12 @@ export function DrawCanvas({
       paintGrid(context, rect, cam, line);
       const hidden = hiddenIdsRef.current;
       const move = moveDeltaRef.current;
+      const hideText = hideTextIdRef.current;
       for (const stroke of drawingRef.current.strokes) {
         if (hidden.has(stroke.id)) continue;
         const drawn =
           move && stroke.id === move.id ? translateStroke(stroke, move.dx, move.dy) : stroke;
-        paintStroke(context, drawn, ink);
+        paintStroke(context, drawn, ink, { hideText: hideText === stroke.id });
       }
       if (previewRef.current) paintStroke(context, previewRef.current, ink);
       const selectedId = selectedRef.current;
@@ -319,6 +385,11 @@ export function DrawCanvas({
         return;
       }
       if (currentTool === "text") {
+        const hit = hitTopStroke(drawingRef.current.strokes, w.x, w.y);
+        if (hit && (isClosedShape(hit.tool) || hit.tool === "text")) {
+          beginEditRef.current(hit);
+          return;
+        }
         drag = { kind: "shape", startX: w.x, startY: w.y, tool: "text" };
         return;
       }
@@ -389,6 +460,7 @@ export function DrawCanvas({
         color: colorRef.current,
         size: sizeRef.current,
         points: [drag.startX, drag.startY, end.x, end.y],
+        fill: isClosedShape(drag.tool) ? fillRef.current : undefined,
       };
       markDirty();
     }
@@ -407,24 +479,32 @@ export function DrawCanvas({
             y: drag.startY,
             sx: drag.startX * cam.scale + cam.x,
             sy: drag.startY * cam.scale + cam.y - textFontSize(sizeRef.current),
+            w: 220,
+            h: 40,
             size: sizeRef.current,
             color: colorRef.current,
+            value: "",
+            shape: false,
+            font: textFontSize(sizeRef.current),
           });
         } else {
           const end = constrainEnd(drag.tool, drag.startX, drag.startY, w.x, w.y, event.shiftKey);
           if (Math.hypot(end.x - drag.startX, end.y - drag.startY) > 3) {
+            const created: Stroke = {
+              id: newStrokeId(),
+              tool: drag.tool,
+              color: colorRef.current,
+              size: sizeRef.current,
+              points: [drag.startX, drag.startY, end.x, end.y],
+              fill: isClosedShape(drag.tool) ? fillRef.current : undefined,
+            };
             commit({
-              strokes: [
-                ...drawingRef.current.strokes,
-                {
-                  id: newStrokeId(),
-                  tool: drag.tool,
-                  color: colorRef.current,
-                  size: sizeRef.current,
-                  points: [drag.startX, drag.startY, end.x, end.y],
-                },
-              ],
+              strokes: [...drawingRef.current.strokes, created],
             });
+            selectedRef.current = created.id;
+            if (isClosedShape(created.tool)) {
+              beginEditRef.current(created);
+            }
           }
         }
       } else if (drag.kind === "erase") {
@@ -451,6 +531,15 @@ export function DrawCanvas({
       markDirty();
     }
 
+    function onDblClick(event: MouseEvent) {
+      const w = world(event.offsetX, event.offsetY);
+      const hit = hitTopStroke(drawingRef.current.strokes, w.x, w.y);
+      if (hit && (isClosedShape(hit.tool) || hit.tool === "text")) {
+        event.preventDefault();
+        beginEditRef.current(hit);
+      }
+    }
+
     function onWheel(event: WheelEvent) {
       event.preventDefault();
       const factor = event.deltaY > 0 ? 0.92 : 1.08;
@@ -466,6 +555,7 @@ export function DrawCanvas({
     surface.addEventListener("pointermove", onPointerMove);
     surface.addEventListener("pointerup", onPointerUp);
     surface.addEventListener("pointercancel", onPointerUp);
+    surface.addEventListener("dblclick", onDblClick);
     surface.addEventListener("wheel", onWheel, { passive: false });
     markDirty();
     return () => {
@@ -476,6 +566,7 @@ export function DrawCanvas({
       surface.removeEventListener("pointermove", onPointerMove);
       surface.removeEventListener("pointerup", onPointerUp);
       surface.removeEventListener("pointercancel", onPointerUp);
+      surface.removeEventListener("dblclick", onDblClick);
       surface.removeEventListener("wheel", onWheel);
     };
   }, [noteId, updateDrawing]);
@@ -484,6 +575,7 @@ export function DrawCanvas({
     undoRef.current = [];
     redoRef.current = [];
     selectedRef.current = null;
+    hideTextIdRef.current = null;
     setCanUndo(false);
     setCanRedo(false);
     markDirtyRef.current();
@@ -496,8 +588,18 @@ export function DrawCanvas({
   function finishText(value: string) {
     const edit = textEdit;
     setTextEdit(null);
-    const trimmed = value.trim();
-    if (!edit || !trimmed) return;
+    hideTextIdRef.current = null;
+    const trimmed = value.replace(/\s+$/, "");
+    if (!edit) return;
+    if (edit.strokeId) {
+      commit({
+        strokes: drawingRef.current.strokes.map((stroke) =>
+          stroke.id === edit.strokeId ? { ...stroke, text: trimmed || undefined } : stroke,
+        ),
+      });
+      return;
+    }
+    if (!trimmed) return;
     commit({
       strokes: [
         ...drawingRef.current.strokes,
@@ -511,6 +613,19 @@ export function DrawCanvas({
         },
       ],
     });
+  }
+
+  function insertPreset(id: string) {
+    const preset = DIAGRAM_PRESETS.find((item) => item.id === id);
+    if (!preset) return;
+    const rect = wrapRef.current?.getBoundingClientRect();
+    const cam = camRef.current;
+    const cx = rect ? (rect.width / 2 - cam.x) / cam.scale : 0;
+    const cy = rect ? (rect.height / 2 - cam.y) / cam.scale : 0;
+    const placed = placeStrokesAt(preset.build(), cx, cy);
+    commit({ strokes: [...drawingRef.current.strokes, ...placed] });
+    setDiagramsOpen(false);
+    setTool("select");
   }
 
   const fileTitle = displayTitle(title ?? "");
@@ -560,6 +675,33 @@ export function DrawCanvas({
           />
         ))}
         <span className="mx-1 h-5 w-px bg-paper-line" />
+        {DRAW_FILLS.map((item) => (
+          <Hint key={item.id} label={item.label}>
+            <button
+              type="button"
+              aria-label={item.label}
+              aria-pressed={fill === item.id}
+              onClick={() => setFill(item.id)}
+              className={cn(
+                "inline-flex size-9 items-center justify-center rounded-sm text-paper-muted",
+                fill === item.id ? "bg-paper-hover text-paper-fg" : "hover:text-paper-fg",
+              )}
+            >
+              <span
+                className="size-3.5 rounded-[2px] border border-current"
+                style={{
+                  background:
+                    item.id === "none"
+                      ? "transparent"
+                      : item.id === "solid"
+                        ? "currentColor"
+                        : "color-mix(in oklab, currentColor 35%, transparent)",
+                }}
+              />
+            </button>
+          </Hint>
+        ))}
+        <span className="mx-1 h-5 w-px bg-paper-line" />
         {SIZES.map((item) => (
           <button
             key={item}
@@ -577,6 +719,42 @@ export function DrawCanvas({
             />
           </button>
         ))}
+        <div className="relative">
+          <Hint label="Insert a diagram">
+            <Button
+              variant="quiet"
+              size="icon-sm"
+              className={cn(
+                "text-paper-muted hover:bg-paper-hover hover:text-paper-fg",
+                diagramsOpen && "text-paper-fg",
+              )}
+              onClick={() => setDiagramsOpen((open) => !open)}
+              aria-label="Insert a diagram"
+              aria-expanded={diagramsOpen}
+            >
+              <LayoutTemplate />
+            </Button>
+          </Hint>
+          {diagramsOpen ? (
+            <div
+              role="menu"
+              className="absolute top-11 left-0 z-20 w-56 overflow-hidden rounded-md bg-raised py-1 text-fg shadow-border"
+            >
+              {DIAGRAM_PRESETS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="menuitem"
+                  className="flex h-11 w-full flex-col justify-center px-3 text-left hover:bg-surface-hover"
+                  onClick={() => insertPreset(item.id)}
+                >
+                  <span className="text-sm">{item.label}</span>
+                  <span className="text-xs text-muted">{item.hint}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
         <span className="ml-auto flex flex-wrap items-center gap-1">
           <Hint label="Undo">
             <Button
@@ -642,31 +820,40 @@ export function DrawCanvas({
           aria-label="Infinite drawing canvas"
         />
         {textEdit ? (
-          <input
+          <textarea
             autoFocus
-            defaultValue=""
-            aria-label="Canvas text"
-            className="absolute min-w-40 bg-transparent font-serif text-paper-fg outline-none"
+            defaultValue={textEdit.value}
+            aria-label={textEdit.shape ? "Label inside shape" : "Canvas text"}
+            className="absolute resize-none bg-transparent text-paper-fg outline-none"
             style={{
-              left: textEdit.sx,
-              top: textEdit.sy,
-              fontSize: textFontSize(textEdit.size),
+              left: textEdit.shape ? textEdit.sx - textEdit.w / 2 : textEdit.sx,
+              top: textEdit.shape ? textEdit.sy - textEdit.h / 2 : textEdit.sy,
+              width: textEdit.w,
+              height: textEdit.h,
+              fontFamily: '"IBM Plex Sans", ui-sans-serif, system-ui, sans-serif',
+              fontWeight: 500,
+              fontSize: textEdit.font,
+              lineHeight: 1.25,
+              textAlign: textEdit.shape ? "center" : "left",
             }}
             onBlur={(event) => finishText(event.currentTarget.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                finishText(event.currentTarget.value);
-              }
               if (event.key === "Escape") {
                 event.preventDefault();
+                hideTextIdRef.current = null;
                 setTextEdit(null);
+                markDirtyRef.current();
+              }
+              if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                event.preventDefault();
+                finishText(event.currentTarget.value);
               }
             }}
           />
         ) : null}
-        <p className="pointer-events-none absolute bottom-3 left-4 text-xs text-paper-subtle">
-          Select · shapes · text · wheel zoom · space to pan · Shift constrains · PNG / JPEG
+        <p className="pointer-events-none absolute bottom-3 left-4 max-w-[70%] text-xs text-paper-subtle">
+          Double-click a shape to label it · diagrams from the template button · Enter edits the
+          selection
         </p>
       </div>
     </div>
