@@ -1,0 +1,51 @@
+# Vellum
+
+A local-first notes app: the quiet of Apple Notes, the links of Obsidian, a little Roam, a little Notion.
+
+Notes live in this browser. There are no accounts.
+
+## What’s in it
+
+- Folders, pins, tags, daily notes, and a paper writing surface
+- Wiki links (`[[page]]`), backlinks, unlinked mentions, and `![[page]]` embeds
+- Vault graph (pan, zoom, click to open)
+- Infinite drawing canvas (pen, highlighter, eraser, shapes)
+- Find and replace in the page
+- Light and dark
+- Slash commands (`/`) for headings, lists, callouts, tables, toggles, templates
+- Table view of the note list
+- Command palette
+
+## Run it
+
+```bash
+npm install
+npm run dev
+```
+
+Then open [http://localhost:8080](http://localhost:8080).
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Dev server on port 8080 |
+| `npm run build` | Production build |
+| `npm run typecheck` | TypeScript check |
+
+## Keyboard
+
+| Shortcut | Action |
+| --- | --- |
+| `⌘/Ctrl N` | New note |
+| `⌘/Ctrl P` | Command palette |
+| `⌘/Ctrl F` | Find in note |
+| `⌘/Ctrl H` | Find and replace |
+| `⌘/Ctrl S` | Save (notes already persist as you type) |
+| `⌘/Ctrl ⇧ G` | Vault graph |
+| `⌘/Ctrl ⇧ L` | Light / dark |
+| `⌘/Ctrl ⇧ D` | Today’s daily note |
+| `/` at the start of a line | Insert a block |
+| `[[` | Link to a note |
+
+## Stack
+
+React 19, TanStack Start, Tailwind v4, Zustand (`localStorage`).
