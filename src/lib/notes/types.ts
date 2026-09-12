@@ -19,6 +19,10 @@ export type DrawTool =
   | "rect"
   | "ellipse"
   | "diamond"
+  | "triangle"
+  | "pentagon"
+  | "hexagon"
+  | "star"
   | "arrow"
   | "text"
   | "hand";
@@ -31,6 +35,10 @@ export type StrokeTool =
   | "rect"
   | "ellipse"
   | "diamond"
+  | "triangle"
+  | "pentagon"
+  | "hexagon"
+  | "star"
   | "arrow"
   | "text";
 
@@ -42,6 +50,8 @@ export type Stroke = {
   points: number[];
   text?: string;
   fill?: DrawFill;
+  /** Wrap width in world units. Unset = auto-grow like Excalidraw unbound text. */
+  textWidth?: number;
 };
 
 export type Drawing = {
