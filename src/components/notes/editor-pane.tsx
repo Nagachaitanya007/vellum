@@ -1,5 +1,7 @@
 import {
   Columns2,
+  Download,
+  Ellipsis,
   Eye,
   Keyboard,
   Network,
@@ -9,9 +11,9 @@ import {
   Save,
   Search,
   Trash2,
-  Download,
 } from "lucide-react";
-import { useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { createPortal } from "react-dom";
 import { DrawCanvas } from "@/components/notes/draw-canvas";
 import { FindReplace } from "@/components/notes/find-replace";
 import { GraphPanel } from "@/components/notes/graph-panel";
@@ -69,6 +71,18 @@ export function EditorPane() {
   } = useNotesUi();
   const mod = modLabel();
   const [suggestIndex, setSuggestIndex] = useState(0);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState({ top: 0, right: 8 });
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setMoreOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [moreOpen]);
   const [cursor, setCursor] = useState(0);
 
   const mode = !isDesktop && previewMode === "split" ? "edit" : previewMode;
@@ -257,8 +271,9 @@ export function EditorPane() {
 
   return (
     <div className="paper-pane flex h-full min-h-0 flex-col bg-paper text-paper-fg">
-      <header className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-paper-line px-3 py-2 md:px-5">
-        <p className="hidden min-w-0 flex-1 truncate px-1 text-sm text-paper-muted md:block">
+      <header className="flex h-12 shrink-0 items-center gap-1 border-b border-paper-line bg-paper px-2 lg:h-auto lg:px-5 lg:py-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+        <p className="hidden min-w-0 flex-1 truncate px-1 text-sm text-paper-muted lg:block">
           <span className="text-paper-fg">{displayTitle(active.title)}</span>
           <span>
             {" "}
@@ -282,7 +297,7 @@ export function EditorPane() {
               folderId: event.target.value ? event.target.value : null,
             })
           }
-          className="h-9 max-w-32 truncate rounded-sm bg-transparent px-2 text-sm text-paper-muted outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-fg"
+          className="hidden h-9 max-w-32 truncate rounded-sm bg-transparent px-2 text-sm text-paper-muted outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-fg lg:block"
         >
           <option value="">Unfiled</option>
           {folders.map((folder) => (
@@ -293,7 +308,7 @@ export function EditorPane() {
         </select>
 
         <div
-          className="ml-auto flex rounded-md bg-paper-hover p-0.5 md:ml-0"
+          className="flex rounded-md bg-paper-hover p-0.5"
           role="tablist"
           aria-label="Editor view"
         >
@@ -320,7 +335,7 @@ export function EditorPane() {
                   aria-selected={selected}
                   onClick={() => setPreviewMode(item.id)}
                   className={cn(
-                    "inline-flex size-9 items-center justify-center rounded-sm text-paper-subtle transition-[background-color,color] duration-quick ease-smooth",
+                    "inline-flex size-11 items-center justify-center rounded-sm text-paper-subtle transition-[background-color,color] duration-quick ease-smooth lg:size-9",
                     "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-fg",
                     selected ? "bg-paper text-paper-fg shadow-paper" : "hover:text-paper-fg",
                   )}
@@ -332,13 +347,14 @@ export function EditorPane() {
             );
           })}
         </div>
+        </div>
 
         <Hint label="Find in note" shortcut={`${mod}F`}>
           <Button
             variant="quiet"
             size="icon-sm"
             className={cn(
-              "text-paper-muted hover:bg-paper-hover hover:text-paper-fg",
+              "size-11 text-paper-muted hover:bg-paper-hover hover:text-paper-fg lg:size-9",
               findOpen && "text-paper-fg",
             )}
             onClick={() => {
@@ -350,81 +366,198 @@ export function EditorPane() {
             <Search />
           </Button>
         </Hint>
-        <Hint label="Save" shortcut={`${mod}S`}>
+        <div className="relative hidden items-center lg:flex">
+          <Hint label="Save" shortcut={`${mod}S`}>
+            <Button
+              variant="quiet"
+              size="icon-sm"
+              className={cn(
+                "text-paper-muted hover:bg-paper-hover hover:text-paper-fg",
+                saveFlash && "text-paper-fg",
+              )}
+              onClick={flashSave}
+              aria-label="Save note"
+            >
+              <Save />
+            </Button>
+          </Hint>
+          <Hint label="Download markdown">
+            <Button
+              variant="quiet"
+              size="icon-sm"
+              className="text-paper-muted hover:bg-paper-hover hover:text-paper-fg"
+              onClick={() => exportNoteMarkdown(active, folders)}
+              aria-label="Download this note as markdown"
+            >
+              <Download />
+            </Button>
+          </Hint>
+          <Hint label={active.pinned ? "Unpin" : "Pin"} shortcut={`${mod}⇧P`}>
+            <Button
+              variant="quiet"
+              size="icon-sm"
+              className={cn(
+                "text-paper-muted hover:bg-paper-hover hover:text-paper-fg",
+                active.pinned && "text-paper-fg",
+              )}
+              onClick={() => togglePin(active.id)}
+              aria-label={active.pinned ? "Unpin note" : "Pin note"}
+            >
+              <Pin />
+            </Button>
+          </Hint>
+          <Hint label="Local graph">
+            <Button
+              variant="quiet"
+              size="icon-sm"
+              className={cn(
+                "text-paper-muted hover:bg-paper-hover hover:text-paper-fg",
+                graphOpen && "text-paper-fg",
+              )}
+              onClick={toggleGraph}
+              aria-label="Toggle local graph"
+            >
+              <Network />
+            </Button>
+          </Hint>
+          <Hint label="Keyboard shortcuts" shortcut={`${mod}/`}>
+            <Button
+              variant="quiet"
+              size="icon-sm"
+              className="text-paper-muted hover:bg-paper-hover hover:text-paper-fg"
+              onClick={() => setHelpOpen(true)}
+              aria-label="Keyboard shortcuts"
+            >
+              <Keyboard />
+            </Button>
+          </Hint>
+          <Hint label="Delete note" shortcut={`${mod}⇧⌫`}>
+            <Button
+              variant="danger"
+              size="icon-sm"
+              className="hover:bg-danger/10"
+              onClick={() => setDeleteOpen(true)}
+              aria-label="Delete note"
+            >
+              <Trash2 />
+            </Button>
+          </Hint>
+        </div>
+        <div className="relative shrink-0" ref={moreRef}>
           <Button
             variant="quiet"
-            size="icon-sm"
-            className={cn(
-              "text-paper-muted hover:bg-paper-hover hover:text-paper-fg",
-              saveFlash && "text-paper-fg",
-            )}
-            onClick={flashSave}
-            aria-label="Save note"
+            size="icon"
+            className="text-paper-muted hover:bg-paper-hover hover:text-paper-fg lg:size-9"
+            onClick={(event) => {
+              event.stopPropagation();
+              const rect = event.currentTarget.getBoundingClientRect();
+              setMenuPos({
+                top: rect.bottom + 6,
+                right: Math.max(8, window.innerWidth - rect.right),
+              });
+              setMoreOpen((open) => !open);
+            }}
+            aria-label="More actions"
+            aria-expanded={moreOpen}
+            aria-haspopup="menu"
           >
-            <Save />
+            <Ellipsis />
           </Button>
-        </Hint>
-        <Hint label="Download markdown">
-          <Button
-            variant="quiet"
-            size="icon-sm"
-            className="text-paper-muted hover:bg-paper-hover hover:text-paper-fg"
-            onClick={() => exportNoteMarkdown(active, folders)}
-            aria-label="Download this note as markdown"
-          >
-            <Download />
-          </Button>
-        </Hint>
-        <Hint label={active.pinned ? "Unpin" : "Pin"} shortcut={`${mod}⇧P`}>
-          <Button
-            variant="quiet"
-            size="icon-sm"
-            className={cn(
-              "text-paper-muted hover:bg-paper-hover hover:text-paper-fg",
-              active.pinned && "text-paper-fg",
-            )}
-            onClick={() => togglePin(active.id)}
-            aria-label={active.pinned ? "Unpin note" : "Pin note"}
-          >
-            <Pin />
-          </Button>
-        </Hint>
-        <Hint label="Local graph">
-          <Button
-            variant="quiet"
-            size="icon-sm"
-            className={cn(
-              "text-paper-muted hover:bg-paper-hover hover:text-paper-fg",
-              graphOpen && "text-paper-fg",
-            )}
-            onClick={toggleGraph}
-            aria-label="Toggle local graph"
-          >
-            <Network />
-          </Button>
-        </Hint>
-        <Hint label="Keyboard shortcuts" shortcut={`${mod}/`}>
-          <Button
-            variant="quiet"
-            size="icon-sm"
-            className="hidden text-paper-muted hover:bg-paper-hover hover:text-paper-fg md:inline-flex"
-            onClick={() => setHelpOpen(true)}
-            aria-label="Keyboard shortcuts"
-          >
-            <Keyboard />
-          </Button>
-        </Hint>
-        <Hint label="Delete note" shortcut={`${mod}⇧⌫`}>
-          <Button
-            variant="danger"
-            size="icon-sm"
-            className="hover:bg-danger/10"
-            onClick={() => setDeleteOpen(true)}
-            aria-label="Delete note"
-          >
-            <Trash2 />
-          </Button>
-        </Hint>
+          {moreOpen
+            ? createPortal(
+                <>
+                  <button
+                    type="button"
+                    className="fixed inset-0 z-50 cursor-default"
+                    aria-label="Close menu"
+                    onClick={() => setMoreOpen(false)}
+                  />
+                  <div
+                    role="menu"
+                    className="fixed z-50 w-52 overflow-hidden rounded-md bg-raised py-1 text-fg shadow-border"
+                    style={{ top: menuPos.top, right: menuPos.right }}
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="flex h-11 w-full items-center gap-2 px-3 text-left text-sm hover:bg-surface-hover"
+                      onClick={() => {
+                        flashSave();
+                        setMoreOpen(false);
+                      }}
+                    >
+                      <Save className="size-4" /> Save
+                    </button>
+                    <label className="flex h-11 w-full items-center gap-2 px-3 text-sm">
+                      <span className="w-4" />
+                      <select
+                        value={active.folderId ?? ""}
+                        onChange={(event) =>
+                          updateNote(active.id, {
+                            folderId: event.target.value ? event.target.value : null,
+                          })
+                        }
+                        className="h-9 min-w-0 flex-1 rounded-sm bg-surface px-2 text-sm text-fg outline-none"
+                        aria-label="Folder"
+                      >
+                        <option value="">Unfiled</option>
+                        {folders.map((folder) => (
+                          <option key={folder.id} value={folder.id}>
+                            {folder.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="flex h-11 w-full items-center gap-2 px-3 text-left text-sm hover:bg-surface-hover"
+                      onClick={() => {
+                        exportNoteMarkdown(active, folders);
+                        setMoreOpen(false);
+                      }}
+                    >
+                      <Download className="size-4" /> Download
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="flex h-11 w-full items-center gap-2 px-3 text-left text-sm hover:bg-surface-hover"
+                      onClick={() => {
+                        togglePin(active.id);
+                        setMoreOpen(false);
+                      }}
+                    >
+                      <Pin className="size-4" /> {active.pinned ? "Unpin" : "Pin"}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="flex h-11 w-full items-center gap-2 px-3 text-left text-sm hover:bg-surface-hover"
+                      onClick={() => {
+                        toggleGraph();
+                        setMoreOpen(false);
+                      }}
+                    >
+                      <Network className="size-4" /> Local graph
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="flex h-11 w-full items-center gap-2 px-3 text-left text-sm text-danger hover:bg-danger/10"
+                      onClick={() => {
+                        setDeleteOpen(true);
+                        setMoreOpen(false);
+                      }}
+                    >
+                      <Trash2 className="size-4" /> Delete
+                    </button>
+                  </div>
+                </>,
+                document.body,
+              )
+            : null}
+        </div>
       </header>
 
       {showEditor ? <FindReplace noteId={active.id} content={active.content} /> : null}
@@ -444,7 +577,7 @@ export function EditorPane() {
             <div className="scroll-thin relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
               <div
                 className={cn(
-                  "mx-auto flex w-full flex-1 flex-col px-5 py-6 md:px-10 md:py-8",
+                  "mx-auto flex w-full flex-1 flex-col px-5 py-5 lg:px-10 lg:py-8",
                   mode === "split" ? "max-w-none" : "max-w-2xl",
                 )}
               >
@@ -456,7 +589,7 @@ export function EditorPane() {
                   onKeyDown={onTitleKeyDown}
                   placeholder="Untitled"
                   aria-label="Note title"
-                  className="w-full bg-transparent font-serif text-3xl font-medium tracking-tight text-paper-fg placeholder:text-paper-subtle outline-none"
+                  className="w-full bg-transparent font-serif text-2xl font-medium tracking-tight text-paper-fg placeholder:text-paper-subtle outline-none lg:text-3xl"
                 />
                 <p className="mt-2 mb-5 text-xs text-paper-subtle sm:hidden">
                   <span className="tabular-nums">{edited}</span>
@@ -482,7 +615,7 @@ export function EditorPane() {
                   placeholder="Start writing… / for blocks, [[ for links, # for tags."
                   aria-label="Note body"
                   spellCheck
-                  className="min-h-64 w-full flex-1 resize-none bg-transparent pb-16 font-serif text-lg leading-writing text-paper-fg placeholder:text-paper-subtle outline-none"
+                  className="min-h-48 w-full flex-1 resize-none bg-transparent pb-16 font-serif text-lg leading-writing text-paper-fg placeholder:text-paper-subtle outline-none"
                 />
               </div>
               {showSuggest ? (

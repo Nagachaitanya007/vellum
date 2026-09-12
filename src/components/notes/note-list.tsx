@@ -1,4 +1,4 @@
-import { LayoutList, Pin, Plus, Search, Table2 } from "lucide-react";
+import { LayoutList, Menu, Pin, Plus, Search, Table2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/tooltip";
@@ -15,7 +15,7 @@ export function NoteList() {
   const createNote = useNotesStore((state) => state.createNote);
   const listMode = useNotesStore((state) => state.listMode);
   const setListMode = useNotesStore((state) => state.setListMode);
-  const { searchRef, titleRef, query, setQuery, filteredNotes, setSidebarOpen } = useNotesUi();
+  const { searchRef, titleRef, query, setQuery, filteredNotes, setSidebarOpen, layout } = useNotesUi();
   const [now, setNow] = useState(() => Date.now());
   const mod = modLabel();
 
@@ -39,6 +39,17 @@ export function NoteList() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface">
       <div className="flex items-center gap-2 px-3 pt-4 pb-2">
+        {layout !== "desktop" ? (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open library"
+            className={layout === "phone" ? "hidden" : undefined}
+          >
+            <Menu />
+          </Button>
+        ) : null}
         <p className="min-w-0 flex-1 truncate text-sm font-medium text-fg">
           {filterLabel(filter, folders)}
         </p>
@@ -84,7 +95,7 @@ export function NoteList() {
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search"
             autoComplete="off"
-            className="h-11 w-full rounded-md bg-bg pr-3 pl-10 text-sm text-fg placeholder:text-subtle outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="h-11 w-full rounded-md bg-bg pr-3 pl-10 text-base text-fg placeholder:text-subtle outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent md:text-sm"
           />
         </label>
       </div>
@@ -141,7 +152,7 @@ export function NoteList() {
                     onClick={() => handleSelect(note.id)}
                     aria-current={active ? "true" : undefined}
                     className={cn(
-                      "w-full px-4 py-3 text-left transition-[background-color] duration-quick ease-smooth",
+                      "w-full px-4 py-3.5 text-left transition-[background-color] duration-quick ease-smooth",
                       "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent",
                       active ? "bg-bg" : "hover:bg-surface-hover",
                     )}

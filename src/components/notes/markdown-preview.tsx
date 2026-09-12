@@ -1,4 +1,4 @@
-import { useMemo, type MouseEvent } from "react";
+import { useDeferredValue, useMemo, type MouseEvent } from "react";
 import { displayTitle, findNoteByTitle, snippet, splitEmbeds, toggleTaskAt } from "@/lib/notes/helpers";
 import { renderMarkdown } from "@/lib/notes/markdown";
 import { useNotesStore } from "@/lib/notes/store";
@@ -13,9 +13,10 @@ export function MarkdownPreview({
   content: string;
   depth?: number;
 }) {
-  const chunks = useMemo(() => splitEmbeds(content), [content]);
+  const deferred = useDeferredValue(content);
+  const chunks = useMemo(() => splitEmbeds(deferred), [deferred]);
 
-  if (!content.trim()) {
+  if (!deferred.trim()) {
     return (
       <p className="font-serif text-lg text-paper-subtle italic">Nothing to preview yet.</p>
     );

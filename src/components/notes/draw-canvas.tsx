@@ -262,7 +262,7 @@ export function DrawCanvas({ noteId, drawing }: { noteId: string; drawing: Drawi
                 aria-pressed={tool === item.id}
                 onClick={() => setTool(item.id)}
                 className={cn(
-                  "inline-flex size-9 items-center justify-center rounded-sm text-paper-muted",
+                  "inline-flex size-11 items-center justify-center rounded-sm text-paper-muted lg:size-9",
                   tool === item.id ? "bg-paper-hover text-paper-fg" : "hover:text-paper-fg",
                 )}
               >

@@ -55,7 +55,7 @@ export function CommandPalette() {
       label="Command palette"
       loop
       overlayClassName="fixed inset-0 z-50 bg-bg/70"
-      contentClassName="fixed top-[18vh] left-1/2 z-50 w-[min(32rem,calc(100vw-1.5rem))] -translate-x-1/2 overflow-hidden rounded-xl bg-raised text-fg shadow-border"
+      contentClassName="cmdk-root overflow-hidden bg-raised text-fg shadow-border"
     >
       <div className="flex items-center gap-2 border-b border-border px-3">
         <Search className="size-4 text-subtle" />

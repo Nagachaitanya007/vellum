@@ -14,6 +14,8 @@ import { noteMatchesFilter, sortNotes } from "@/lib/notes/helpers";
 import { useNotesStore } from "@/lib/notes/store";
 import type { Note } from "@/lib/notes/types";
 
+export type ShellLayout = "phone" | "tablet" | "desktop";
+
 type NotesUiValue = {
   searchRef: RefObject<HTMLInputElement | null>;
   titleRef: RefObject<HTMLInputElement | null>;
@@ -36,6 +38,7 @@ type NotesUiValue = {
   query: string;
   setQuery: Dispatch<SetStateAction<string>>;
   filteredNotes: Note[];
+  layout: ShellLayout;
   isDesktop: boolean;
 };
 
@@ -43,11 +46,12 @@ const NotesUiContext = createContext<NotesUiValue | null>(null);
 
 export function NotesUiProvider({
   children,
-  isDesktop,
+  layout,
 }: {
   children: ReactNode;
-  isDesktop: boolean;
+  layout: ShellLayout;
 }) {
+  const isDesktop = layout === "desktop";
   const notes = useNotesStore((state) => state.notes);
   const filter = useNotesStore((state) => state.filter);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -105,6 +109,7 @@ export function NotesUiProvider({
       query,
       setQuery,
       filteredNotes,
+      layout,
       isDesktop,
     }),
     [
@@ -118,6 +123,7 @@ export function NotesUiProvider({
       flashSave,
       query,
       filteredNotes,
+      layout,
       isDesktop,
     ],
   );

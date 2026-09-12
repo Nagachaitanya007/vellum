@@ -1,4 +1,7 @@
+import { Menu } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useNotesUi } from "@/components/notes/notes-ui";
+import { Button } from "@/components/ui/button";
 import { buildGraph, displayTitle } from "@/lib/notes/helpers";
 import { useNotesStore } from "@/lib/notes/store";
 
@@ -23,6 +26,7 @@ export function VaultGraph() {
   const camRef = useRef({ x: 0, y: 0, scale: 1 });
   const hoverRef = useRef<string | null>(null);
   const dragRef = useRef<{ id?: string; lx: number; ly: number; sx: number; sy: number; pan?: boolean } | null>(null);
+  const { layout, setSidebarOpen } = useNotesUi();
   const [hoverTitle, setHoverTitle] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
@@ -265,20 +269,31 @@ export function VaultGraph() {
 
   return (
     <div className="paper-pane flex h-full min-h-0 flex-col bg-paper text-paper-fg">
-      <div className="flex shrink-0 items-center gap-3 border-b border-paper-line px-4 py-3">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-paper-line px-3 py-3 lg:px-4">
+        {layout === "tablet" ? (
+          <Button
+            variant="quiet"
+            size="icon"
+            className="text-paper-muted hover:bg-paper-hover hover:text-paper-fg"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open library"
+          >
+            <Menu />
+          </Button>
+        ) : null}
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">Vault graph</p>
-          <p className="text-xs text-paper-muted">
+          <p className="hidden text-xs text-paper-muted sm:block">
             {notes.length} notes · drag to arrange · scroll to zoom · click to open
           </p>
         </div>
-        <label className="relative block w-48">
+        <label className="relative block w-full sm:w-48">
           <span className="sr-only">Highlight notes</span>
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Highlight"
-            className="h-9 w-full rounded-sm bg-paper-hover px-3 text-sm text-paper-fg placeholder:text-paper-subtle outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-fg"
+            className="h-11 w-full rounded-sm bg-paper-hover px-3 text-base text-paper-fg placeholder:text-paper-subtle outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-fg lg:h-9 lg:text-sm"
           />
         </label>
       </div>

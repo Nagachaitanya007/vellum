@@ -1,13 +1,13 @@
 import { Menu, Plus, Search } from "lucide-react";
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { CommandPalette } from "@/components/notes/command-palette";
 import { VaultSyncHost } from "@/components/notes/account-sync";
 import { DeleteDialog } from "@/components/notes/delete-dialog";
 import { EditorPane } from "@/components/notes/editor-pane";
-import { LibraryRail } from "@/components/notes/library-rail";
+import { LibraryFooter, LibraryRail } from "@/components/notes/library-rail";
 import { NoteList } from "@/components/notes/note-list";
-import { NotesUiProvider, useNotesUi } from "@/components/notes/notes-ui";
+import { NotesUiProvider, useNotesUi, type ShellLayout } from "@/components/notes/notes-ui";
 import { ShortcutsDialog } from "@/components/notes/shortcuts-dialog";
 import { VaultGraph } from "@/components/notes/vault-graph";
 import { Button } from "@/components/ui/button";
@@ -25,14 +25,25 @@ function revealNotes() {
   hydrateNotesFromStorage();
 }
 
+function layoutFromWidth(): ShellLayout {
+  if (window.matchMedia("(min-width: 1024px)").matches) return "desktop";
+  if (window.matchMedia("(min-width: 768px)").matches) return "tablet";
+  return "phone";
+}
+
+function syncAppHeight() {
+  const height = window.visualViewport?.height ?? window.innerHeight;
+  document.documentElement.style.setProperty("--app-height", `${Math.round(height)}px`);
+}
+
 export function AppShell() {
   const hasHydrated = useNotesStore((state) => state.hasHydrated);
   const theme = useNotesStore((state) => state.theme);
-  const [isDesktop, setIsDesktop] = useState<boolean | null>(null);
+  const [layout, setLayout] = useState<ShellLayout | null>(null);
 
   useLayoutEffect(() => {
-    const mq = window.matchMedia("(min-width: 768px)");
-    setIsDesktop(mq.matches);
+    setLayout(layoutFromWidth());
+    syncAppHeight();
     hydrateNotesFromStorage();
   }, []);
 
@@ -41,27 +52,45 @@ export function AppShell() {
   }, [theme]);
 
   useEffect(() => {
-    const mq = window.matchMedia("(min-width: 768px)");
-    const update = () => setIsDesktop(mq.matches);
-    mq.addEventListener("change", update);
+    const update = () => setLayout(layoutFromWidth());
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    const tablet = window.matchMedia("(min-width: 768px)");
+    desktop.addEventListener("change", update);
+    tablet.addEventListener("change", update);
+    const viewport = window.visualViewport;
+    viewport?.addEventListener("resize", syncAppHeight);
+    viewport?.addEventListener("scroll", syncAppHeight);
+    window.addEventListener("resize", syncAppHeight);
     try {
       void useNotesStore.persist.rehydrate();
     } catch {
       revealNotes();
     }
-    return () => mq.removeEventListener("change", update);
+    return () => {
+      desktop.removeEventListener("change", update);
+      tablet.removeEventListener("change", update);
+      viewport?.removeEventListener("resize", syncAppHeight);
+      viewport?.removeEventListener("scroll", syncAppHeight);
+      window.removeEventListener("resize", syncAppHeight);
+    };
   }, []);
 
-  if (!hasHydrated || isDesktop === null) {
+  if (!hasHydrated || layout === null) {
     return <ShellSkeleton />;
   }
 
   return (
     <TooltipProvider>
-      <NotesUiProvider isDesktop={isDesktop}>
+      <NotesUiProvider layout={layout}>
         <VaultSyncHost />
         <KeyboardBindings />
-        {isDesktop ? <DesktopLayout /> : <MobileLayout />}
+        {layout === "desktop" ? (
+          <DesktopLayout />
+        ) : layout === "tablet" ? (
+          <TabletLayout />
+        ) : (
+          <MobileLayout />
+        )}
         <DeleteDialog />
         <ShortcutsDialog />
         <CommandPalette />
@@ -73,9 +102,9 @@ export function AppShell() {
 function DesktopLayout() {
   const workspace = useNotesStore((state) => state.workspace);
   return (
-    <div className="h-dvh overflow-hidden">
+    <div className="app-frame overflow-hidden">
       <Group orientation="horizontal" className="h-full">
-        <Panel defaultSize={200} minSize={160} maxSize={280} className="min-h-0">
+        <Panel defaultSize={200} minSize={168} maxSize={280} className="min-h-0">
           <LibraryRail />
         </Panel>
         <Separator className="w-1 bg-border hover:bg-subtle/40" />
@@ -85,7 +114,7 @@ function DesktopLayout() {
           </Panel>
         ) : (
           <>
-            <Panel defaultSize={280} minSize={220} maxSize={520} className="min-h-0">
+            <Panel defaultSize={280} minSize={220} maxSize={480} className="min-h-0">
               <NoteList />
             </Panel>
             <Separator className="w-1 bg-border hover:bg-subtle/40" />
@@ -95,6 +124,32 @@ function DesktopLayout() {
           </>
         )}
       </Group>
+    </div>
+  );
+}
+
+function TabletLayout() {
+  const workspace = useNotesStore((state) => state.workspace);
+  const { sidebarOpen, setSidebarOpen } = useNotesUi();
+
+  return (
+    <div className="app-frame flex overflow-hidden">
+      {workspace === "graph" ? (
+        <div className="min-h-0 min-w-0 flex-1">
+          <VaultGraph />
+        </div>
+      ) : (
+        <Group orientation="horizontal" className="h-full min-w-0 flex-1">
+          <Panel defaultSize={280} minSize={220} maxSize={360} className="min-h-0">
+            <NoteList />
+          </Panel>
+          <Separator className="w-1 bg-border hover:bg-subtle/40" />
+          <Panel minSize={320} className="min-h-0">
+            <EditorPane />
+          </Panel>
+        </Group>
+      )}
+      {sidebarOpen ? <LibraryDrawer open onClose={() => setSidebarOpen(false)} wide /> : null}
     </div>
   );
 }
@@ -112,8 +167,8 @@ function MobileLayout() {
   }
 
   return (
-    <div className="flex h-dvh flex-col">
-      <div className="flex shrink-0 items-center gap-1 border-b border-border bg-bg px-2 py-1.5">
+    <div className="app-frame flex flex-col overflow-hidden">
+      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border bg-bg px-2">
         <Button
           variant="quiet"
           size="icon"
@@ -141,32 +196,57 @@ function MobileLayout() {
         {workspace === "graph" ? <VaultGraph /> : <EditorPane />}
       </div>
 
-      <div className={sidebarOpen ? "fixed inset-0 z-40" : "pointer-events-none fixed inset-0 z-40"}>
-        <button
-          type="button"
-          aria-label="Dismiss library"
-          onClick={() => setSidebarOpen(false)}
-          className={
-            sidebarOpen
-              ? "absolute inset-0 bg-bg/70 opacity-100 transition-opacity duration-fast ease-smooth"
-              : "absolute inset-0 bg-bg/70 opacity-0 transition-opacity duration-quick ease-smooth"
-          }
-        />
-        <aside
-          className={
-            sidebarOpen
-              ? "absolute inset-y-0 left-0 flex w-full max-w-md translate-x-0 border-r border-border bg-bg shadow-border transition-transform duration-fast ease-smooth"
-              : "absolute inset-y-0 left-0 flex w-full max-w-md -translate-x-full border-r border-border bg-bg shadow-border transition-transform duration-quick ease-smooth"
-          }
-        >
-          <div className="flex w-40 shrink-0 flex-col border-r border-border">
-            <LibraryRail onClose={() => setSidebarOpen(false)} />
+      {sidebarOpen ? <LibraryDrawer open onClose={() => setSidebarOpen(false)} /> : null}
+    </div>
+  );
+}
+
+function LibraryDrawer({
+  open,
+  onClose,
+  wide = false,
+}: {
+  open: boolean;
+  onClose: () => void;
+  wide?: boolean;
+}) {
+  return (
+    <div className={open ? "fixed inset-0 z-40" : "pointer-events-none fixed inset-0 z-40"}>
+      <button
+        type="button"
+        aria-label="Dismiss library"
+        onClick={onClose}
+        tabIndex={open ? 0 : -1}
+        className="absolute inset-0 bg-bg/70 transition-opacity duration-fast ease-smooth"
+        style={{ opacity: open ? 1 : 0 }}
+      />
+      <aside
+        aria-hidden={!open}
+        className="absolute inset-y-0 left-0 flex w-full border-r border-border bg-bg shadow-border transition-transform duration-fast ease-smooth will-change-transform"
+        style={{
+          transform: open ? "translateX(0)" : "translateX(-110%)",
+          maxWidth: wide ? "28rem" : undefined,
+        }}
+      >
+        {wide ? (
+          <>
+            <div className="flex w-48 shrink-0 flex-col border-r border-border">
+              <LibraryRail onClose={onClose} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <NoteList />
+            </div>
+          </>
+        ) : (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <LibraryRail onClose={onClose} compact />
+            <div className="min-h-0 flex-1 border-t border-border">
+              <NoteList />
+            </div>
+            <LibraryFooter />
           </div>
-          <div className="min-w-0 flex-1">
-            <NoteList />
-          </div>
-        </aside>
-      </div>
+        )}
+      </aside>
     </div>
   );
 }
@@ -201,6 +281,8 @@ function KeyboardBindings() {
     paletteOpen,
     query,
   } = useNotesUi();
+  const filteredNotesRef = useRef(filteredNotes);
+  filteredNotesRef.current = filteredNotes;
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -220,7 +302,7 @@ function KeyboardBindings() {
       const inField =
         tag === "INPUT" || tag === "TEXTAREA" || Boolean(target?.isContentEditable);
       const inSearch = target === searchRef.current;
-      const ids = filteredNotes.map((note) => note.id);
+      const ids = filteredNotesRef.current.map((note) => note.id);
 
       if (meta && key.toLowerCase() === "s") {
         event.preventDefault();
@@ -388,7 +470,6 @@ function KeyboardBindings() {
     cyclePreviewMode,
     deleteOpen,
     editorRef,
-    filteredNotes,
     findOpen,
     flashSave,
     helpOpen,
@@ -418,13 +499,13 @@ function KeyboardBindings() {
 function ShellSkeleton() {
   return (
     <div className="flex h-dvh bg-bg">
-      <div className="hidden w-48 shrink-0 border-r border-border md:block">
+      <div className="hidden w-48 shrink-0 border-r border-border lg:block">
         <div className="px-4 pt-5 pb-3">
           <p className="font-serif text-lg font-medium tracking-tight text-fg">Vellum</p>
           <p className="text-xs text-subtle">Loading notes</p>
         </div>
       </div>
-      <div className="hidden w-72 shrink-0 border-r border-border md:block">
+      <div className="hidden w-72 shrink-0 border-r border-border lg:block">
         <div className="px-3 pt-4">
           <div className="h-11 rounded-md bg-surface" />
         </div>

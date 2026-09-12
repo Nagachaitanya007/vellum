@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
+import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
 import { emptyDrawing, normalizeDrawing } from "./drawing";
 import {
   dailyTitle,
@@ -21,8 +21,44 @@ import type {
   WorkspaceView,
 } from "./types";
 
-export const STORAGE_KEY = "vellum-notes-v3";
+const STORAGE_KEY = "vellum-notes-v3";
 const LEGACY_KEYS = ["vellum-notes-v2", "vellum-notes-v1"];
+
+function debouncedLocalStorage(ms = 220): StateStorage {
+  let timer = 0;
+  let pendingKey: string | null = null;
+  let pendingValue: string | null = null;
+
+  const flush = () => {
+    if (pendingKey === null || pendingValue === null) return;
+    localStorage.setItem(pendingKey, pendingValue);
+    pendingKey = null;
+    pendingValue = null;
+  };
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") flush();
+    });
+  }
+
+  return {
+    getItem: (name) => localStorage.getItem(name),
+    setItem: (name, value) => {
+      pendingKey = name;
+      pendingValue = value;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(flush, ms);
+    },
+    removeItem: (name) => {
+      window.clearTimeout(timer);
+      pendingKey = null;
+      pendingValue = null;
+      localStorage.removeItem(name);
+    },
+  };
+}
 
 function newId(): string {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -429,7 +465,7 @@ export const useNotesStore = create<NotesState>()(
     }),
     {
       name: STORAGE_KEY,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => debouncedLocalStorage()),
       skipHydration: true,
       partialize: (state) => ({
         notes: state.notes,

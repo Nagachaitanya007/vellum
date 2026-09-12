@@ -83,7 +83,7 @@ export function FindReplace({ noteId, content }: { noteId: string; content: stri
             }
           }}
           placeholder="Find in note"
-          className="h-9 min-w-40 flex-1 rounded-sm bg-paper px-3 text-sm text-paper-fg placeholder:text-paper-subtle outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-fg"
+          className="h-11 min-w-40 flex-1 rounded-sm bg-paper px-3 text-base text-paper-fg placeholder:text-paper-subtle outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-fg lg:h-9 lg:text-sm"
         />
         <span className="tabular-nums text-xs text-paper-muted">
           {query ? `${hits.length === 0 ? 0 : index + 1}/${hits.length}` : ""}
@@ -140,7 +140,7 @@ export function FindReplace({ noteId, content }: { noteId: string; content: stri
             value={replacement}
             onChange={(event) => setReplacement(event.target.value)}
             placeholder="Replace with"
-            className="h-9 min-w-40 flex-1 rounded-sm bg-paper px-3 text-sm text-paper-fg placeholder:text-paper-subtle outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-fg"
+            className="h-11 min-w-40 flex-1 rounded-sm bg-paper px-3 text-base text-paper-fg placeholder:text-paper-subtle outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper-fg lg:h-9 lg:text-sm"
           />
           <Button
             variant="quiet"
