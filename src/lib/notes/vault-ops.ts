@@ -77,6 +77,7 @@ export type NotePayload = {
 export type VaultSnapshot = {
   notes: NotePayload[];
   deletedIds: string[];
+  deletedAt: Record<string, number>;
   folders: Folder[] | null;
   foldersUpdatedAt: number | null;
 };
@@ -288,9 +289,12 @@ export async function loadVaultForUser(query: QueryFn, userId: string): Promise<
   );
   const notes: NotePayload[] = [];
   const deletedIds: string[] = [];
+  const deletedAt: Record<string, number> = {};
   for (const row of rows) {
-    if (row.deleted_at != null) deletedIds.push(row.id);
-    else {
+    if (row.deleted_at != null) {
+      deletedIds.push(row.id);
+      deletedAt[row.id] = asRowEpoch(row.deleted_at);
+    } else {
       notes.push({
         id: row.id,
         title: row.title ?? "",
@@ -308,6 +312,7 @@ export async function loadVaultForUser(query: QueryFn, userId: string): Promise<
   return {
     notes,
     deletedIds,
+    deletedAt,
     folders: setting ? parseFoldersColumn(setting.folders) : null,
     foldersUpdatedAt: setting ? asRowEpoch(setting.updated_at) : null,
   };
@@ -357,7 +362,7 @@ export async function saveVaultForUser(
         on conflict (user_id, id) do update set
           deleted_at = excluded.deleted_at,
           updated_at = excluded.updated_at
-        where notes.deleted_at is null or notes.deleted_at <= excluded.deleted_at`,
+        where coalesce(notes.deleted_at, notes.updated_at) <= excluded.deleted_at`,
       [tomb.id, userId, tomb.deletedAt, tomb.deletedAt, tomb.deletedAt],
     );
   }

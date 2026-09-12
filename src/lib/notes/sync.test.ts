@@ -442,3 +442,73 @@ test("first sign-in from an anonymous seed wipes so seed notes are not uploaded"
   const result = nextAdoptVaultUser({ vaultOwnerId: null, lastVaultOwnerId: null }, "user-a");
   assert.equal(result.wipe, true);
 });
+
+test("captureDirty does not tombstone a note that still exists locally", () => {
+  const captured = captureDirty(
+    slice({
+      notes: [note("n1", { content: "restored", updatedAt: 50 })],
+      dirtyNoteIds: ["n1"],
+      pendingDeletes: ["n1"],
+    }),
+  );
+  assert.ok(captured);
+  assert.equal(captured.payload.deleted.length, 0);
+  assert.equal(captured.payload.notes[0]?.content, "restored");
+});
+
+test("a newer remote tombstone drops a stale local dirty edit", () => {
+  const merged = mergeVault(
+    {
+      notes: [note("n1", { content: "stale", updatedAt: 10 })],
+      folders: [],
+      dirtyNoteIds: ["n1"],
+      pendingDeletes: [],
+      dirtyFolders: false,
+    },
+    {
+      notes: [],
+      deletedIds: ["n1"],
+      deletedAt: { n1: 80 },
+      folders: null,
+    },
+  );
+  assert.equal(merged.notes.length, 0);
+  assert.equal(merged.toPush.length, 0);
+});
+
+test("a local dirty edit newer than a remote tombstone is kept and re-pushed", () => {
+  const merged = mergeVault(
+    {
+      notes: [note("n1", { content: "restored", updatedAt: 90 })],
+      folders: [],
+      dirtyNoteIds: ["n1"],
+      pendingDeletes: [],
+      dirtyFolders: false,
+    },
+    {
+      notes: [],
+      deletedIds: ["n1"],
+      deletedAt: { n1: 40 },
+      folders: null,
+    },
+  );
+  assert.equal(merged.notes[0]?.content, "restored");
+  assert.equal(merged.toPush.length, 1);
+});
+
+test("persisted localStorage slice keeps dirty markers so a refresh can retry", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const text = await readFile(new URL("./store.ts", import.meta.url), "utf8");
+  const start = text.indexOf("partialize:");
+  assert.ok(start >= 0);
+  const slice = text.slice(start, start + 900);
+  for (const key of [
+    "dirtyNoteIds",
+    "pendingDeletes",
+    "dirtyFolders",
+    "foldersUpdatedAt",
+    "lastVaultOwnerId",
+  ]) {
+    assert.match(slice, new RegExp(key));
+  }
+});

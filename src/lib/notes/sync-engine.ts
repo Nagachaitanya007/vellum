@@ -41,8 +41,14 @@ export function captureDirty(state: SyncSlice): { batch: UploadBatch; payload: S
   }
   const dirty = new Set(state.dirtyNoteIds);
   const notes = state.notes.filter((note) => dirty.has(note.id));
+  const liveIds = new Set(state.notes.map((note) => note.id));
   const deletedAt = Date.now();
-  const deleted = state.pendingDeletes.map((id) => ({ id, deletedAt }));
+  const deleted = state.pendingDeletes
+    .filter((id) => !liveIds.has(id))
+    .map((id) => ({ id, deletedAt }));
+  if (!notes.length && !deleted.length && !state.dirtyFolders) {
+    return null;
+  }
   const foldersUpdatedAt = state.dirtyFolders ? state.foldersUpdatedAt : null;
   return {
     batch: {

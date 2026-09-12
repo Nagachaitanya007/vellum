@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { allowSharedDevUser } from "./dev-user.ts";
-import { resolveTrustedOrigins, useSecureCookies } from "./origins.ts";
+import { evaluateRequestIsolation, resolveTrustedOrigins, useSecureCookies } from "./origins.ts";
 import { safeRedirectPath } from "./redirect.ts";
 
 test("OAuth callback URLs must be same-origin relative paths", () => {
@@ -75,5 +75,85 @@ test("shared dev-user is refused whenever auth, Turso, or Vercel is in play", ()
       vercel: true,
     }),
     false,
+  );
+});
+
+const appUrl = "https://vellum.example/api";
+
+test("same-origin and non-browser vault requests are allowed", () => {
+  assert.equal(
+    evaluateRequestIsolation({
+      method: "POST",
+      url: appUrl,
+      secFetchSite: "same-origin",
+      secFetchMode: "cors",
+      secFetchDest: "empty",
+      origin: "https://vellum.example",
+    }),
+    "allow",
+  );
+  assert.equal(
+    evaluateRequestIsolation({
+      method: "POST",
+      url: appUrl,
+      secFetchSite: null,
+      secFetchMode: null,
+      secFetchDest: null,
+      origin: null,
+    }),
+    "allow",
+  );
+});
+
+test("cross-site scripted requests are blocked even without Sec-Fetch-Site", () => {
+  assert.equal(
+    evaluateRequestIsolation({
+      method: "POST",
+      url: appUrl,
+      secFetchSite: "cross-site",
+      secFetchMode: "cors",
+      secFetchDest: "empty",
+      origin: "https://evil.example",
+    }),
+    "forbid",
+  );
+  assert.equal(
+    evaluateRequestIsolation({
+      method: "POST",
+      url: appUrl,
+      secFetchSite: null,
+      secFetchMode: "cors",
+      secFetchDest: "empty",
+      origin: "https://evil.example",
+    }),
+    "forbid",
+  );
+});
+
+test("same-origin Sec-Fetch-Site is allowed even when Origin differs from the request URL", () => {
+  assert.equal(
+    evaluateRequestIsolation({
+      method: "POST",
+      url: "http://127.0.0.1:8080/api",
+      secFetchSite: "same-origin",
+      secFetchMode: "cors",
+      secFetchDest: "empty",
+      origin: "https://vellum.example",
+    }),
+    "allow",
+  );
+});
+
+test("Google OAuth top-level GET callback is allowed", () => {
+  assert.equal(
+    evaluateRequestIsolation({
+      method: "GET",
+      url: "https://vellum.example/api/auth/callback/google",
+      secFetchSite: "cross-site",
+      secFetchMode: "navigate",
+      secFetchDest: "document",
+      origin: "https://accounts.google.com",
+    }),
+    "allow",
   );
 });

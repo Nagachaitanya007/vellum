@@ -194,5 +194,42 @@ test("loadVaultForUser without a matching user returns an empty vault", async ()
   const loaded = await loadVaultForUser(query, "nobody");
   assert.deepEqual(loaded.notes, []);
   assert.deepEqual(loaded.deletedIds, []);
+  assert.deepEqual(loaded.deletedAt, {});
   assert.equal(loaded.folders, null);
+});
+
+test("a stale tombstone does not delete a newer live note for the same user", async () => {
+  const query = await memoryQuery();
+  await saveVaultForUser(
+    query,
+    "user-a",
+    parseSavePayload({ notes: [notePayload("n1", { title: "Newest", updatedAt: 80 })] }),
+  );
+  await saveVaultForUser(
+    query,
+    "user-a",
+    parseSavePayload({ deleted: [{ id: "n1", deletedAt: 20 }] }),
+  );
+  const loaded = await loadVaultForUser(query, "user-a");
+  assert.equal(loaded.notes.length, 1);
+  assert.equal(loaded.notes[0]?.title, "Newest");
+  assert.equal(loaded.deletedIds.length, 0);
+});
+
+test("a newer tombstone still deletes an older live note for the same user", async () => {
+  const query = await memoryQuery();
+  await saveVaultForUser(
+    query,
+    "user-a",
+    parseSavePayload({ notes: [notePayload("n1", { title: "Old", updatedAt: 10 })] }),
+  );
+  await saveVaultForUser(
+    query,
+    "user-a",
+    parseSavePayload({ deleted: [{ id: "n1", deletedAt: 40 }] }),
+  );
+  const loaded = await loadVaultForUser(query, "user-a");
+  assert.equal(loaded.notes.length, 0);
+  assert.equal(loaded.deletedIds.includes("n1"), true);
+  assert.equal(loaded.deletedAt.n1, 40);
 });

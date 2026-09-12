@@ -24,6 +24,7 @@ export type MergeInput = {
 export type MergeRemote = {
   notes: RemoteNote[];
   deletedIds: string[];
+  deletedAt?: Record<string, number>;
   folders: Folder[] | null;
   foldersUpdatedAt?: number | null;
 };
@@ -84,7 +85,12 @@ export function mergeVault(local: MergeInput, remote: MergeRemote): MergeResult 
       stillDelete.push(id);
       continue;
     }
-    if (remoteDeleted.has(id) && !localDirty) continue;
+    if (remoteDeleted.has(id)) {
+      const tombAt = remote.deletedAt?.[id];
+      const localNewerThanTomb =
+        localDirty && loc && (typeof tombAt !== "number" || loc.updatedAt > tombAt);
+      if (!localNewerThanTomb) continue;
+    }
 
     if (loc && rem) {
       if (localDirty && loc.updatedAt >= rem.updatedAt) {
