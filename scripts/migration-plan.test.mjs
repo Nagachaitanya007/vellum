@@ -56,15 +56,17 @@ test("non-.sql entries are dropped (readdir also yields the auth/ directory)", (
   assert.deepEqual(pendingMigrations(["auth", "README.md"], []), []);
 });
 
-test("the auth schema ships outside the globbed directory", () => {
+test("this app glob-applies auth and notes migrations", () => {
   const migrationsDir = join(projectRoot(), "migrations");
-  assert.deepEqual(pendingMigrations(readdirSync(migrationsDir), []), []);
+  const pending = pendingMigrations(readdirSync(migrationsDir), []);
+  const names = pending.map((item) => item.name);
+  assert.ok(names.includes("0001_auth.sql"));
+  assert.ok(names.includes("0002_notes.sql"));
+  assert.ok(names.includes("0003_account_unique.sql"));
   assert.ok(readdirSync(join(migrationsDir, "auth")).includes("0001_auth.sql"));
 });
 
 test("this workspace's auth schema copy is byte-identical to its source", () => {
-  // An edited copy diverges silently: basename keying skips it on a database
-  // that already ran the original, and applies it on a fresh PGLite preview.
   const pair = authSchemaCopy(projectRoot());
   if (pair === null) return; // sign-in off — nothing has been copied up
   assert.equal(

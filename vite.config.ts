@@ -22,17 +22,17 @@ function hasGlobbedMigrations(root: string): boolean {
 }
 
 /**
- * Finish PGLite bootstrap during dev-server setup (before traffic). Vite awaits
+ * Finish libSQL / Turso bootstrap during dev-server setup (before traffic). Vite awaits
  * async `configureServer` hooks. Production: `src/lib/db` kicks `ensureDbReady`
  * on import.
  *
  * Vite awaiting the hook puts this on time-to-first-render, so an app with no
  * migrations — no schema to apply — skips it entirely rather than paying for a
- * PGLite instance it never queries.
+ * database it never queries.
  */
-function pgliteBootstrapPlugin(): Plugin {
+function dbBootstrapPlugin(): Plugin {
   return {
-    name: "app-builder:pglite-bootstrap",
+    name: "app-builder:db-bootstrap",
     apply: "serve",
     async configureServer(server) {
       if (!hasGlobbedMigrations(server.config.root)) return;
@@ -158,7 +158,7 @@ export default defineConfig(({ command, isPreview }) => ({
   },
   resolve: { tsconfigPaths: true },
   plugins: [
-    pgliteBootstrapPlugin(),
+    dbBootstrapPlugin(),
     // Before tanstackStart so /auth/popup never falls through to the SPA.
     authPopupPlugin(),
     // Dev-only /__app-env, read by scripts/check-auth-invariant.mjs.

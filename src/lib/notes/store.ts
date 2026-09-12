@@ -101,6 +101,8 @@ type NotesState = {
   dirtyFolders: boolean;
   syncStatus: SyncStatus;
   lastSyncedAt: number | null;
+  vaultOwnerId: string | null;
+  adoptVaultUser: (userId: string | null) => void;
   createNote: (input?: CreateNoteInput) => string;
   deleteNote: (id: string) => void;
   updateNote: (
@@ -140,6 +142,7 @@ type PersistedSlice = {
   dirtyNoteIds?: string[];
   pendingDeletes?: string[];
   dirtyFolders?: boolean;
+  vaultOwnerId?: string | null;
 };
 
 function withDirty(ids: string[], id: string): string[] {
@@ -180,6 +183,7 @@ function applyPersisted(data: PersistedSlice) {
       dirtyNoteIds: [],
       pendingDeletes: [],
       dirtyFolders: true,
+      vaultOwnerId: null,
     });
     return;
   }
@@ -203,6 +207,7 @@ function applyPersisted(data: PersistedSlice) {
     dirtyNoteIds: Array.isArray(data.dirtyNoteIds) ? data.dirtyNoteIds : [],
     pendingDeletes: Array.isArray(data.pendingDeletes) ? data.pendingDeletes : [],
     dirtyFolders: Boolean(data.dirtyFolders),
+    vaultOwnerId: typeof data.vaultOwnerId === "string" ? data.vaultOwnerId : null,
   });
 }
 
@@ -268,8 +273,43 @@ export const useNotesStore = create<NotesState>()(
       dirtyFolders: false,
       syncStatus: "local",
       lastSyncedAt: null,
+      vaultOwnerId: null,
 
       setHasHydrated: (value) => set({ hasHydrated: value }),
+
+      adoptVaultUser: (userId) => {
+        const current = get().vaultOwnerId;
+        if (current === userId) return;
+        if (userId && current && current !== userId) {
+          set({
+            notes: [],
+            folders: [],
+            activeId: null,
+            dirtyNoteIds: [],
+            pendingDeletes: [],
+            dirtyFolders: false,
+            vaultOwnerId: userId,
+            initialized: true,
+            syncStatus: "syncing",
+          });
+          return;
+        }
+        if (userId && !current) {
+          set({
+            notes: [],
+            folders: [],
+            activeId: null,
+            dirtyNoteIds: [],
+            pendingDeletes: [],
+            dirtyFolders: false,
+            vaultOwnerId: userId,
+            initialized: true,
+            syncStatus: "syncing",
+          });
+          return;
+        }
+        set({ vaultOwnerId: userId, syncStatus: userId ? "syncing" : "local" });
+      },
 
       createNote: (input = {}) => {
         const now = Date.now();
@@ -487,6 +527,7 @@ export const useNotesStore = create<NotesState>()(
         dirtyNoteIds: state.dirtyNoteIds,
         pendingDeletes: state.pendingDeletes,
         dirtyFolders: state.dirtyFolders,
+        vaultOwnerId: state.vaultOwnerId,
       }),
     },
   ),

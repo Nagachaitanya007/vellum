@@ -1,13 +1,24 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Cloud } from "lucide-react";
-import { GROK_PROVIDERS, authEnabled, signIn } from "@/lib/auth/client";
+import { useEffect, useState } from "react";
+import { AUTH_PROVIDERS, authEnabled, signIn } from "@/lib/auth/client";
 import { SignedIn, SignedOut } from "@/lib/auth/gates";
+import { getAuthStatus } from "@/lib/auth/status";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 
 export const Route = createFileRoute("/login")({ component: Login });
 
 function Login() {
   const { isPending } = useCurrentUserState();
+  const [googleConfigured, setGoogleConfigured] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    void getAuthStatus()
+      .then((status) => setGoogleConfigured(status.googleConfigured))
+      .catch(() => setGoogleConfigured(false));
+  }, []);
+
+  const waiting = isPending || googleConfigured === null;
 
   return (
     <main className="grid min-h-dvh place-items-center bg-bg px-6 py-12 text-fg">
@@ -15,17 +26,17 @@ function Login() {
         <div className="space-y-2">
           <p className="font-serif text-3xl font-medium tracking-tight">Vellum</p>
           <p className="text-sm leading-relaxed text-muted">
-            Sign in to keep the same notes on your phone and computer. Folders,
-            drawings, and links travel with your account.
+            Sign in with Google to keep the same notes on your phone and computer.
+            Folders, drawings, and links live in your Turso database — not in Drive.
           </p>
         </div>
 
-        {isPending ? (
+        {waiting ? (
           <div className="h-24 animate-pulse rounded-md bg-surface" />
         ) : (
           <>
             <SignedIn>
-              <p className="text-sm text-muted">You are signed in. Notes are syncing.</p>
+              <p className="text-sm text-muted">You are signed in. Notes are syncing to Turso.</p>
               <Link
                 to="/"
                 className="inline-flex h-11 w-full items-center justify-center rounded-md bg-accent text-sm font-medium text-accent-fg"
@@ -34,13 +45,13 @@ function Login() {
               </Link>
             </SignedIn>
             <SignedOut>
-              {authEnabled ? (
+              {authEnabled && googleConfigured ? (
                 <div className="space-y-2">
-                  {GROK_PROVIDERS.map((provider) => (
+                  {AUTH_PROVIDERS.map((provider) => (
                     <button
-                      key={provider.providerId}
+                      key={provider.id}
                       type="button"
-                      onClick={() => signIn(provider.providerId, { callbackURL: "/" })}
+                      onClick={() => signIn(provider.id, { callbackURL: "/" })}
                       className="flex h-11 w-full items-center justify-center gap-2 rounded-md border border-border bg-surface text-sm text-fg hover:bg-surface-hover"
                     >
                       <Cloud className="size-4 text-subtle" />
@@ -48,6 +59,13 @@ function Login() {
                     </button>
                   ))}
                 </div>
+              ) : authEnabled ? (
+                <p className="text-sm leading-relaxed text-muted">
+                  Google sign-in is not configured on this server. Set{" "}
+                  <code className="text-xs">GOOGLE_CLIENT_ID</code> and{" "}
+                  <code className="text-xs">GOOGLE_CLIENT_SECRET</code> (see{" "}
+                  <code className="text-xs">.env.example</code>), then restart.
+                </p>
               ) : (
                 <p className="text-sm text-muted">Sign-in is disabled.</p>
               )}
@@ -56,7 +74,9 @@ function Login() {
         )}
 
         <p className="text-xs leading-relaxed text-subtle">
-          Without an account, notes stay on this device only.
+          Without an account, notes stay on this device only. Sign-in uses your
+          own Google Cloud OAuth client. Redirect:{" "}
+          <code className="text-[0.7rem]">/api/auth/callback/google</code>
         </p>
       </div>
     </main>

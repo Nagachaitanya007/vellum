@@ -133,7 +133,7 @@ export const saveVaultChanges = createServerFn({ method: "POST" })
       await sql.query(
         `insert into notes (
             id, user_id, title, content, folder_id, pinned, kind, drawing, created_at, updated_at, deleted_at
-          ) values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, null)
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null)
           on conflict (user_id, id) do update set
             title = excluded.title,
             content = excluded.content,
@@ -151,7 +151,7 @@ export const saveVaultChanges = createServerFn({ method: "POST" })
           note.title,
           note.content,
           note.folderId,
-          note.pinned,
+          note.pinned ? 1 : 0,
           note.kind === "canvas" ? "canvas" : "markdown",
           JSON.stringify(note.drawing ?? emptyDrawing()),
           note.createdAt,
@@ -164,12 +164,12 @@ export const saveVaultChanges = createServerFn({ method: "POST" })
       await sql.query(
         `insert into notes (
             id, user_id, title, content, folder_id, pinned, drawing, created_at, updated_at, deleted_at
-          ) values ($1, $2, '', '', null, false, '{"strokes":[]}'::jsonb, $3, $3, $3)
+          ) values (?, ?, '', '', null, 0, '{"strokes":[]}', ?, ?, ?)
           on conflict (user_id, id) do update set
             deleted_at = excluded.deleted_at,
             updated_at = excluded.updated_at
           where notes.deleted_at is null or notes.deleted_at <= excluded.deleted_at`,
-        [tomb.id, userId, tomb.deletedAt],
+        [tomb.id, userId, tomb.deletedAt, tomb.deletedAt, tomb.deletedAt],
       );
     }
 
@@ -177,7 +177,7 @@ export const saveVaultChanges = createServerFn({ method: "POST" })
       const now = Date.now();
       await sql.query(
         `insert into vault_settings (user_id, folders, updated_at)
-         values ($1, $2::jsonb, $3)
+         values (?, ?, ?)
          on conflict (user_id) do update set
            folders = excluded.folders,
            updated_at = excluded.updated_at`,

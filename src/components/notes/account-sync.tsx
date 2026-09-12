@@ -30,6 +30,7 @@ export function VaultSyncHost() {
   useEffect(() => {
     if (isPending) return;
     if (user && authEnabled) {
+      useNotesStore.getState().adoptVaultUser(user.id);
       startVaultSync();
       const onVisible = () => {
         if (document.visibilityState === "visible") void flushVaultNow();
@@ -43,6 +44,7 @@ export function VaultSyncHost() {
       };
     }
     stopVaultSync();
+    useNotesStore.getState().adoptVaultUser(null);
   }, [user?.id, isPending]);
 
   return null;
