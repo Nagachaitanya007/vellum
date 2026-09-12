@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { useState, type FormEvent } from "react";
+import { AccountFooter } from "@/components/notes/account-sync";
 import { Button } from "@/components/ui/button";
 import { allTags } from "@/lib/notes/helpers";
 import { useNotesStore } from "@/lib/notes/store";
@@ -170,6 +171,7 @@ export function LibraryRail({ onClose }: { onClose?: () => void }) {
       </nav>
 
       <div className="shrink-0 border-t border-border p-2">
+        <AccountFooter />
         <button
           type="button"
           onClick={toggleTheme}

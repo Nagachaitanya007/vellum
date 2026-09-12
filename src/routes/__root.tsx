@@ -11,7 +11,7 @@ export const Route = createRootRoute({
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: APP_NAME },
-      { name: "description", content: "Notes with folders, wiki links, a vault graph, drawing canvas, find and replace, and light or dark." },
+      { name: "description", content: "Notes with folders, wiki links, a vault graph, drawing canvas, and sync across your devices." },
       { name: "theme-color", content: "#111110" },
     ],
     links: [

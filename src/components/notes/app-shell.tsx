@@ -2,6 +2,7 @@ import { Menu, Plus, Search } from "lucide-react";
 import { useEffect, useLayoutEffect, useState } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { CommandPalette } from "@/components/notes/command-palette";
+import { VaultSyncHost } from "@/components/notes/account-sync";
 import { DeleteDialog } from "@/components/notes/delete-dialog";
 import { EditorPane } from "@/components/notes/editor-pane";
 import { LibraryRail } from "@/components/notes/library-rail";
@@ -18,6 +19,7 @@ import {
   useActiveNote,
   useNotesStore,
 } from "@/lib/notes/store";
+import { flushVaultNow } from "@/lib/notes/sync";
 
 function revealNotes() {
   hydrateNotesFromStorage();
@@ -57,6 +59,7 @@ export function AppShell() {
   return (
     <TooltipProvider>
       <NotesUiProvider isDesktop={isDesktop}>
+        <VaultSyncHost />
         <KeyboardBindings />
         {isDesktop ? <DesktopLayout /> : <MobileLayout />}
         <DeleteDialog />
@@ -222,6 +225,7 @@ function KeyboardBindings() {
       if (meta && key.toLowerCase() === "s") {
         event.preventDefault();
         flashSave();
+        void flushVaultNow();
         return;
       }
 

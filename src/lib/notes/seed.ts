@@ -55,7 +55,9 @@ export function seedNotes(now = Date.now()): Note[] {
       pinned: true,
       createdAt: now - 1000 * 60 * 8,
       updatedAt: now - 1000 * 60 * 8,
-      content: `The quiet of Apple Notes, the links of Obsidian, a little Roam, a little Notion. Notes live in this browser.
+      content: `The quiet of Apple Notes, the links of Obsidian, a little Roam, a little Notion.
+
+Sign in from the library to keep this vault on your phone and computer. Notes live on the device until then.
 
 **On the desk**
 

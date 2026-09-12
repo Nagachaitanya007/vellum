@@ -2,7 +2,7 @@
 
 A local-first notes app: the quiet of Apple Notes, the links of Obsidian, a little Roam, a little Notion.
 
-Notes live in this browser. There are no accounts.
+Sign in with Google or X to keep the same vault on your phone and computer. Without an account, notes stay on this device.
 
 ## What’s in it
 
@@ -15,6 +15,7 @@ Notes live in this browser. There are no accounts.
 - Slash commands (`/`) for headings, lists, callouts, tables, toggles, templates
 - Table view of the note list
 - Command palette
+- Sign-in sync: write on one device, open the same account on another
 
 ## Run it
 

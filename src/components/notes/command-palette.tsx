@@ -1,6 +1,7 @@
 import { Command } from "cmdk";
 import {
   CalendarDays,
+  Cloud,
   Eye,
   FilePlus,
   Folder,
@@ -16,6 +17,7 @@ import {
   Table2,
 } from "lucide-react";
 import { allTags, displayTitle } from "@/lib/notes/helpers";
+import { flushVaultNow } from "@/lib/notes/sync";
 import { useNotesStore } from "@/lib/notes/store";
 import { useNotesUi } from "./notes-ui";
 
@@ -124,6 +126,17 @@ export function CommandPalette() {
           >
             <FilePlus className="size-4 text-subtle" />
             New from template · Meeting
+          </Command.Item>
+          <Command.Item
+            value="sync vault now cloud"
+            className="cmdk-item"
+            onSelect={() => {
+              void flushVaultNow();
+              close();
+            }}
+          >
+            <Cloud className="size-4 text-subtle" />
+            Sync now
           </Command.Item>
           <Command.Item
             value="toggle theme light dark"

@@ -2,6 +2,7 @@ export type PreviewMode = "edit" | "preview" | "split" | "draw";
 export type ThemeMode = "light" | "dark";
 export type WorkspaceView = "notes" | "graph";
 export type ListMode = "list" | "table";
+export type SyncStatus = "local" | "syncing" | "synced" | "error";
 
 export type Folder = {
   id: string;

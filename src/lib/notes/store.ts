@@ -16,6 +16,7 @@ import type {
   ListMode,
   Note,
   PreviewMode,
+  SyncStatus,
   ThemeMode,
   WorkspaceView,
 } from "./types";
@@ -55,6 +56,11 @@ type NotesState = {
   listMode: ListMode;
   initialized: boolean;
   hasHydrated: boolean;
+  dirtyNoteIds: string[];
+  pendingDeletes: string[];
+  dirtyFolders: boolean;
+  syncStatus: SyncStatus;
+  lastSyncedAt: number | null;
   createNote: (input?: CreateNoteInput) => string;
   deleteNote: (id: string) => void;
   updateNote: (
@@ -89,7 +95,18 @@ type PersistedSlice = {
   theme?: ThemeMode;
   listMode?: ListMode;
   initialized?: boolean;
+  dirtyNoteIds?: string[];
+  pendingDeletes?: string[];
+  dirtyFolders?: boolean;
 };
+
+function withDirty(ids: string[], id: string): string[] {
+  return ids.includes(id) ? ids : [...ids, id];
+}
+
+function withoutId(ids: string[], id: string): string[] {
+  return ids.filter((item) => item !== id);
+}
 
 function folderIdForNew(filter: LibraryFilter): string | null {
   return filter.type === "folder" ? filter.id : null;
@@ -118,6 +135,9 @@ function applyPersisted(data: PersistedSlice) {
       listMode,
       initialized: true,
       hasHydrated: true,
+      dirtyNoteIds: [],
+      pendingDeletes: [],
+      dirtyFolders: true,
     });
     return;
   }
@@ -137,6 +157,9 @@ function applyPersisted(data: PersistedSlice) {
     listMode,
     initialized: true,
     hasHydrated: true,
+    dirtyNoteIds: Array.isArray(data.dirtyNoteIds) ? data.dirtyNoteIds : [],
+    pendingDeletes: Array.isArray(data.pendingDeletes) ? data.pendingDeletes : [],
+    dirtyFolders: Boolean(data.dirtyFolders),
   });
 }
 
@@ -196,6 +219,11 @@ export const useNotesStore = create<NotesState>()(
       listMode: "list",
       initialized: false,
       hasHydrated: false,
+      dirtyNoteIds: [],
+      pendingDeletes: [],
+      dirtyFolders: false,
+      syncStatus: "local",
+      lastSyncedAt: null,
 
       setHasHydrated: (value) => set({ hasHydrated: value }),
 
@@ -217,6 +245,8 @@ export const useNotesStore = create<NotesState>()(
           activeId: note.id,
           previewMode: "edit",
           workspace: "notes",
+          dirtyNoteIds: withDirty(state.dirtyNoteIds, note.id),
+          pendingDeletes: withoutId(state.pendingDeletes, note.id),
         }));
         return note.id;
       },
@@ -226,7 +256,12 @@ export const useNotesStore = create<NotesState>()(
           const remaining = state.notes.filter((note) => note.id !== id);
           const nextActive =
             state.activeId === id ? (remaining[0]?.id ?? null) : state.activeId;
-          return { notes: sortNotes(remaining), activeId: nextActive };
+          return {
+            notes: sortNotes(remaining),
+            activeId: nextActive,
+            dirtyNoteIds: withoutId(state.dirtyNoteIds, id),
+            pendingDeletes: withDirty(state.pendingDeletes, id),
+          };
         });
       },
 
@@ -243,6 +278,7 @@ export const useNotesStore = create<NotesState>()(
                 : note,
             ),
           ),
+          dirtyNoteIds: withDirty(state.dirtyNoteIds, id),
         }));
       },
 
@@ -251,6 +287,7 @@ export const useNotesStore = create<NotesState>()(
           notes: state.notes.map((note) =>
             note.id === id ? { ...note, drawing, updatedAt: Date.now() } : note,
           ),
+          dirtyNoteIds: withDirty(state.dirtyNoteIds, id),
         }));
       },
 
@@ -258,9 +295,12 @@ export const useNotesStore = create<NotesState>()(
         set((state) => ({
           notes: sortNotes(
             state.notes.map((note) =>
-              note.id === id ? { ...note, pinned: !note.pinned } : note,
+              note.id === id
+                ? { ...note, pinned: !note.pinned, updatedAt: Date.now() }
+                : note,
             ),
           ),
+          dirtyNoteIds: withDirty(state.dirtyNoteIds, id),
         }));
       },
 
@@ -309,15 +349,19 @@ export const useNotesStore = create<NotesState>()(
           folders: [...state.folders, folder],
           filter: { type: "folder", id: folder.id },
           workspace: "notes",
+          dirtyFolders: true,
         }));
         return folder.id;
       },
 
       deleteFolder: (id) => {
         set((state) => {
-          const notes = state.notes.map((note) =>
-            note.folderId === id ? { ...note, folderId: null } : note,
-          );
+          const touched: string[] = [];
+          const notes = state.notes.map((note) => {
+            if (note.folderId !== id) return note;
+            touched.push(note.id);
+            return { ...note, folderId: null, updatedAt: Date.now() };
+          });
           const filter =
             state.filter.type === "folder" && state.filter.id === id
               ? ({ type: "all" } as const)
@@ -326,6 +370,8 @@ export const useNotesStore = create<NotesState>()(
             folders: state.folders.filter((folder) => folder.id !== id),
             notes: sortNotes(notes),
             filter,
+            dirtyFolders: true,
+            dirtyNoteIds: touched.reduce(withDirty, state.dirtyNoteIds),
           };
         });
       },
@@ -394,6 +440,9 @@ export const useNotesStore = create<NotesState>()(
         theme: state.theme,
         listMode: state.listMode,
         initialized: state.initialized,
+        dirtyNoteIds: state.dirtyNoteIds,
+        pendingDeletes: state.pendingDeletes,
+        dirtyFolders: state.dirtyFolders,
       }),
     },
   ),
