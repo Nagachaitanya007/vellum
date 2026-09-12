@@ -1,5 +1,6 @@
 import {
   CalendarDays,
+  Download,
   Folder,
   FolderPlus,
   Hash,
@@ -14,6 +15,7 @@ import {
 import { useState, type FormEvent } from "react";
 import { AccountFooter } from "@/components/notes/account-sync";
 import { Button } from "@/components/ui/button";
+import { exportVaultZip } from "@/lib/notes/export";
 import { allTags } from "@/lib/notes/helpers";
 import { useNotesStore } from "@/lib/notes/store";
 import { cn } from "@/lib/utils";
@@ -172,6 +174,14 @@ export function LibraryRail({ onClose }: { onClose?: () => void }) {
 
       <div className="shrink-0 border-t border-border p-2">
         <AccountFooter />
+        <button
+          type="button"
+          onClick={() => exportVaultZip(notes, folders)}
+          className="flex h-11 w-full items-center gap-2 rounded-md px-3 text-sm text-muted hover:bg-surface-hover hover:text-fg"
+        >
+          <Download className="size-4" />
+          Download vault
+        </button>
         <button
           type="button"
           onClick={toggleTheme}

@@ -16,6 +16,7 @@ Sign in with Google or X to keep the same vault on your phone and computer. With
 - Table view of the note list
 - Command palette
 - Sign-in sync: write on one device, open the same account on another
+- Download a note as markdown, or the whole vault as a zip for Google Drive
 
 ## Run it
 

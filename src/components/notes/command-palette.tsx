@@ -2,6 +2,7 @@ import { Command } from "cmdk";
 import {
   CalendarDays,
   Cloud,
+  Download,
   Eye,
   FilePlus,
   Folder,
@@ -16,6 +17,7 @@ import {
   Sun,
   Table2,
 } from "lucide-react";
+import { exportNoteMarkdown, exportVaultZip } from "@/lib/notes/export";
 import { allTags, displayTitle } from "@/lib/notes/helpers";
 import { flushVaultNow } from "@/lib/notes/sync";
 import { useNotesStore } from "@/lib/notes/store";
@@ -137,6 +139,29 @@ export function CommandPalette() {
           >
             <Cloud className="size-4 text-subtle" />
             Sync now
+          </Command.Item>
+          <Command.Item
+            value="export download this note markdown"
+            className="cmdk-item"
+            onSelect={() => {
+              const note = notes.find((item) => item.id === activeId);
+              if (note) exportNoteMarkdown(note, folders);
+              close();
+            }}
+          >
+            <Download className="size-4 text-subtle" />
+            Download this note
+          </Command.Item>
+          <Command.Item
+            value="export vault zip google drive markdown"
+            className="cmdk-item"
+            onSelect={() => {
+              exportVaultZip(notes, folders);
+              close();
+            }}
+          >
+            <Download className="size-4 text-subtle" />
+            Download vault
           </Command.Item>
           <Command.Item
             value="toggle theme light dark"

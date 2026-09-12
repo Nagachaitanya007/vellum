@@ -9,6 +9,7 @@ import {
   Save,
   Search,
   Trash2,
+  Download,
 } from "lucide-react";
 import { useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { DrawCanvas } from "@/components/notes/draw-canvas";
@@ -31,6 +32,7 @@ import {
   wrapSelection,
 } from "@/lib/notes/helpers";
 import { useActiveNote, useNotesStore } from "@/lib/notes/store";
+import { exportNoteMarkdown } from "@/lib/notes/export";
 import type { PreviewMode } from "@/lib/notes/types";
 import { cn, modLabel } from "@/lib/utils";
 import { useNotesUi } from "./notes-ui";
@@ -360,6 +362,17 @@ export function EditorPane() {
             aria-label="Save note"
           >
             <Save />
+          </Button>
+        </Hint>
+        <Hint label="Download markdown">
+          <Button
+            variant="quiet"
+            size="icon-sm"
+            className="text-paper-muted hover:bg-paper-hover hover:text-paper-fg"
+            onClick={() => exportNoteMarkdown(active, folders)}
+            aria-label="Download this note as markdown"
+          >
+            <Download />
           </Button>
         </Hint>
         <Hint label={active.pinned ? "Unpin" : "Pin"} shortcut={`${mod}⇧P`}>
