@@ -75,6 +75,7 @@ function normalizeNote(raw: Partial<Note> & { id: string; title?: string; conten
     folderId: raw.folderId ?? null,
     pinned: Boolean(raw.pinned),
     drawing: normalizeDrawing(raw.drawing),
+    kind: raw.kind === "canvas" ? "canvas" : "markdown",
     createdAt: raw.createdAt ?? Date.now(),
     updatedAt: raw.updatedAt ?? Date.now(),
   };
@@ -155,9 +156,7 @@ function applyPersisted(data: PersistedSlice) {
   const theme: ThemeMode = data.theme === "light" ? "light" : "dark";
   const listMode: ListMode = data.listMode === "table" ? "table" : "list";
   const previewMode: PreviewMode =
-    data.previewMode === "preview" || data.previewMode === "split" || data.previewMode === "draw"
-      ? data.previewMode
-      : "edit";
+    data.previewMode === "preview" || data.previewMode === "split" ? data.previewMode : "edit";
 
   if (!data.initialized) {
     const seeded = seedNotes();
@@ -273,6 +272,7 @@ export const useNotesStore = create<NotesState>()(
           folderId: input.folderId !== undefined ? input.folderId : folderIdForNew(filter),
           pinned: Boolean(input.pinned),
           drawing: input.drawing ?? emptyDrawing(),
+          kind: input.kind === "canvas" ? "canvas" : "markdown",
           createdAt: now,
           updatedAt: now,
         };
@@ -351,14 +351,7 @@ export const useNotesStore = create<NotesState>()(
           ? ["edit", "preview", "split"]
           : ["edit", "preview"];
         const current = get().previewMode;
-        const usable =
-          current === "draw"
-            ? "edit"
-            : allowSplit
-              ? current
-              : current === "split"
-                ? "edit"
-                : current;
+        const usable = order.includes(current) ? current : "edit";
         const index = order.indexOf(usable);
         const next = order[(index + 1) % order.length] ?? "edit";
         set({ previewMode: next });
@@ -472,7 +465,7 @@ export const useNotesStore = create<NotesState>()(
         folders: state.folders,
         activeId: state.activeId,
         filter: state.filter,
-        previewMode: state.previewMode === "draw" ? "edit" : state.previewMode,
+        previewMode: state.previewMode,
         theme: state.theme,
         listMode: state.listMode,
         initialized: state.initialized,

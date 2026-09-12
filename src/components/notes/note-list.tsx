@@ -1,4 +1,4 @@
-import { LayoutList, Menu, Pin, Plus, Search, Table2 } from "lucide-react";
+import { LayoutList, Menu, PenTool, Pin, Plus, Search, Table2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/tooltip";
@@ -12,10 +12,9 @@ export function NoteList() {
   const filter = useNotesStore((state) => state.filter);
   const activeId = useNotesStore((state) => state.activeId);
   const selectNote = useNotesStore((state) => state.selectNote);
-  const createNote = useNotesStore((state) => state.createNote);
   const listMode = useNotesStore((state) => state.listMode);
   const setListMode = useNotesStore((state) => state.setListMode);
-  const { searchRef, titleRef, query, setQuery, filteredNotes, setSidebarOpen, layout } = useNotesUi();
+  const { searchRef, titleRef, query, setQuery, filteredNotes, setSidebarOpen, layout, setNewNoteOpen } = useNotesUi();
   const [now, setNow] = useState(() => Date.now());
   const mod = modLabel();
 
@@ -25,10 +24,7 @@ export function NoteList() {
   }, []);
 
   function handleCreate() {
-    createNote();
-    setQuery("");
-    setSidebarOpen(false);
-    requestAnimationFrame(() => titleRef.current?.focus());
+    setNewNoteOpen(true);
   }
 
   function handleSelect(id: string) {
@@ -158,7 +154,9 @@ export function NoteList() {
                     )}
                   >
                     <span className="flex items-start gap-2">
-                      {note.pinned ? (
+                      {note.kind === "canvas" ? (
+                        <PenTool className="mt-0.5 size-3.5 shrink-0 text-subtle" />
+                      ) : note.pinned ? (
                         <Pin className="mt-0.5 size-3.5 shrink-0 text-subtle" />
                       ) : null}
                       <span className="min-w-0 flex-1">
@@ -169,7 +167,13 @@ export function NoteList() {
                           <span className="shrink-0 tabular-nums">
                             {formatEdited(note.updatedAt, now)}
                           </span>
-                          <span className="truncate">{snippet(note.content)}</span>
+                          <span className="truncate">
+                            {note.kind === "canvas"
+                              ? note.drawing.strokes.length
+                                ? "Canvas board"
+                                : "Empty board"
+                              : snippet(note.content)}
+                          </span>
                         </span>
                       </span>
                     </span>

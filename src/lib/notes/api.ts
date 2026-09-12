@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { getSql } from "@/lib/db";
 import { emptyDrawing, normalizeDrawing } from "./drawing";
-import type { Drawing, Folder, Note } from "./types";
+import type { Drawing, Folder, Note, NoteKind } from "./types";
 
 export type NotePayload = {
   id: string;
@@ -10,6 +10,7 @@ export type NotePayload = {
   content: string;
   folderId: string | null;
   pinned: boolean;
+  kind: NoteKind;
   drawing: Drawing;
   createdAt: number;
   updatedAt: number;
@@ -27,6 +28,7 @@ type NoteRow = {
   content: string;
   folder_id: string | null;
   pinned: boolean | string | number;
+  kind?: string | null;
   drawing: unknown;
   created_at: number | string;
   updated_at: number | string;
@@ -84,6 +86,7 @@ function rowToNote(row: NoteRow): NotePayload {
     content: row.content ?? "",
     folderId: row.folder_id ?? null,
     pinned: asBool(row.pinned),
+    kind: row.kind === "canvas" ? "canvas" : "markdown",
     drawing: parseDrawing(row.drawing),
     createdAt: asEpoch(row.created_at),
     updatedAt: asEpoch(row.updated_at),
@@ -95,7 +98,7 @@ export const loadVault = createServerFn({ method: "GET" })
   .handler(async ({ context }): Promise<VaultSnapshot> => {
     const sql = await getSql();
     const rows = await sql<NoteRow>`
-      select id, title, content, folder_id, pinned, drawing, created_at, updated_at, deleted_at
+      select id, title, content, folder_id, pinned, kind, drawing, created_at, updated_at, deleted_at
       from notes
       where user_id = ${context.userId}
     `;
@@ -129,13 +132,14 @@ export const saveVaultChanges = createServerFn({ method: "POST" })
     for (const note of data.notes ?? []) {
       await sql.query(
         `insert into notes (
-            id, user_id, title, content, folder_id, pinned, drawing, created_at, updated_at, deleted_at
-          ) values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, null)
+            id, user_id, title, content, folder_id, pinned, kind, drawing, created_at, updated_at, deleted_at
+          ) values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, null)
           on conflict (user_id, id) do update set
             title = excluded.title,
             content = excluded.content,
             folder_id = excluded.folder_id,
             pinned = excluded.pinned,
+            kind = excluded.kind,
             drawing = excluded.drawing,
             created_at = excluded.created_at,
             updated_at = excluded.updated_at,
@@ -148,6 +152,7 @@ export const saveVaultChanges = createServerFn({ method: "POST" })
           note.content,
           note.folderId,
           note.pinned,
+          note.kind === "canvas" ? "canvas" : "markdown",
           JSON.stringify(note.drawing ?? emptyDrawing()),
           note.createdAt,
           note.updatedAt,
@@ -190,6 +195,7 @@ export function noteToPayload(note: Note): NotePayload {
     content: note.content,
     folderId: note.folderId,
     pinned: note.pinned,
+    kind: note.kind,
     drawing: note.drawing,
     createdAt: note.createdAt,
     updatedAt: note.updatedAt,

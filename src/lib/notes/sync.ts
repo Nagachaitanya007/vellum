@@ -24,6 +24,7 @@ function payloadToNote(payload: NotePayload): Note {
     content: payload.content,
     folderId: payload.folderId,
     pinned: payload.pinned,
+    kind: payload.kind === "canvas" ? "canvas" : "markdown",
     drawing: payload.drawing,
     createdAt: payload.createdAt,
     updatedAt: payload.updatedAt,

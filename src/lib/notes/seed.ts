@@ -31,16 +31,18 @@ function rainDoodle(): Drawing {
 }
 
 function page(
-  note: Omit<Note, "drawing" | "pinned" | "folderId"> & {
+  note: Omit<Note, "drawing" | "pinned" | "folderId" | "kind"> & {
     drawing?: Drawing;
     pinned?: boolean;
     folderId?: string | null;
+    kind?: Note["kind"];
   },
 ): Note {
   return {
     pinned: false,
     folderId: null,
     drawing: emptyDrawing(),
+    kind: "markdown",
     ...note,
   };
 }
@@ -63,12 +65,12 @@ Sign in from the library to keep this vault on your phone and computer. Notes li
 
 - Folders, pins, and a paper page
 - Vault graph in the library
-- Draw on an infinite canvas
+- Markdown pages or canvas boards — choose when you create
 - Find and replace in the page
 - Light and dark
-- \`/\` for blocks, like Notion
+- \`/\` for blocks, like Notion. Try \`/seq\`, \`/flow\`, \`/math\`, \`/mark\`, \`/today\`
 
-Start at [[How linking works]], sketch in [[Field notes — after rain]], or open [[${today}]].
+Start at [[How linking works]], sketch in [[Rain sketch]], or open [[${today}]].
 
 ![[How linking works]]`,
     }),
@@ -124,20 +126,28 @@ See also [[Field notes — after rain]].`,
 
 A wiki link: [[How linking works]].
 
+Type \`/\` then seq, flow, math, mark, or today.
+
+\`\`\`seq
+Ada->Grace: Compile
+Grace-->Ada: Ship
+\`\`\`
+
+==Keep the important line==
+
 #writing`,
     }),
     page({
       id: "seed-field-notes",
       title: "Field notes — after rain",
       folderId: "folder-personal",
-      drawing: rainDoodle(),
       createdAt: now - 1000 * 60 * 60 * 26,
       updatedAt: now - 1000 * 60 * 60 * 26,
       content: `The pavement was still dark when I left. A bus sighed at the corner and the air smelled like wet stone.
 
 I walked without a destination, which is usually when the better sentences show up.
 
-Open the Draw tab — there is a small sketch on an infinite canvas. Pan with the hand tool, zoom with the wheel, ink with the pen.
+The sketch lives on [[Rain sketch]] — a canvas board, separate from this page.
 
 **Keep**
 
@@ -148,6 +158,16 @@ Open the Draw tab — there is a small sketch on an infinite canvas. Pan with th
 Related: [[Welcome to Vellum]] and the method in [[How linking works]].
 
 #journal #writing`,
+    }),
+    page({
+      id: "seed-rain-sketch",
+      title: "Rain sketch",
+      folderId: "folder-personal",
+      kind: "canvas",
+      drawing: rainDoodle(),
+      createdAt: now - 1000 * 60 * 60 * 25,
+      updatedAt: now - 1000 * 60 * 60 * 25,
+      content: "",
     }),
     page({
       id: "seed-review",

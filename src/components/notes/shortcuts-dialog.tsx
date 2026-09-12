@@ -8,7 +8,7 @@ export function ShortcutsDialog() {
   const alt = altLabel();
 
   const rows = [
-    { keys: `${mod}N`, action: "New note" },
+    { keys: `${mod}N`, action: "New page or board" },
     { keys: `${mod}P`, action: "Command palette" },
     { keys: `${mod}K`, action: "Search the list" },
     { keys: `${mod}F`, action: "Find in note" },
@@ -33,7 +33,7 @@ export function ShortcutsDialog() {
         <DialogTitle>Keyboard</DialogTitle>
         <DialogDescription className="mt-1">
           {isDesktop
-            ? "Notes, graph, find, and draw. Shortcuts work from anywhere except a dialog."
+            ? "Notes, graph, find, and canvas. Shortcuts work from anywhere except a dialog."
             : "Search, folders, and the toolbar cover most of it on a phone."}
         </DialogDescription>
         <ul className="mt-5 max-h-80 divide-y divide-border overflow-y-auto">

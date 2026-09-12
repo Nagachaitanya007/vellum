@@ -6,7 +6,6 @@ import {
   Keyboard,
   Network,
   Pencil,
-  PenTool,
   Pin,
   Save,
   Search,
@@ -33,6 +32,7 @@ import {
   wordCount,
   wrapSelection,
 } from "@/lib/notes/helpers";
+import { exportDrawingImage } from "@/lib/notes/drawing";
 import { useActiveNote, useNotesStore } from "@/lib/notes/store";
 import { exportNoteMarkdown } from "@/lib/notes/export";
 import type { PreviewMode } from "@/lib/notes/types";
@@ -43,7 +43,6 @@ const modes: { id: PreviewMode; label: string; desktopOnly?: boolean }[] = [
   { id: "edit", label: "Write" },
   { id: "preview", label: "Preview" },
   { id: "split", label: "Split", desktopOnly: true },
-  { id: "draw", label: "Draw" },
 ];
 
 export function EditorPane() {
@@ -51,7 +50,6 @@ export function EditorPane() {
   const notes = useNotesStore((state) => state.notes);
   const folders = useNotesStore((state) => state.folders);
   const updateNote = useNotesStore((state) => state.updateNote);
-  const createNote = useNotesStore((state) => state.createNote);
   const togglePin = useNotesStore((state) => state.togglePin);
   const previewMode = useNotesStore((state) => state.previewMode);
   const setPreviewMode = useNotesStore((state) => state.setPreviewMode);
@@ -63,6 +61,7 @@ export function EditorPane() {
     setDeleteOpen,
     setHelpOpen,
     isDesktop,
+    setNewNoteOpen,
     findOpen,
     setFindOpen,
     setReplaceOpen,
@@ -88,7 +87,6 @@ export function EditorPane() {
   const mode = !isDesktop && previewMode === "split" ? "edit" : previewMode;
   const showEditor = mode === "edit" || mode === "split";
   const showPreview = mode === "preview" || mode === "split";
-  const showDraw = mode === "draw";
 
   const wikiQuery = active && showEditor ? openWikiQuery(active.content, cursor) : null;
   const slashQuery = active && showEditor && wikiQuery === null ? openSlashQuery(active.content, cursor) : null;
@@ -126,10 +124,11 @@ export function EditorPane() {
     });
   }
 
-  function applySlashItem(insert: string) {
+  function applySlashItem(insert: string | (() => string)) {
     if (!active || !editorRef.current) return;
+    const text = typeof insert === "function" ? insert() : insert;
     const at = editorRef.current.selectionStart;
-    const result = applySlash(active.content, at, insert);
+    const result = applySlash(active.content, at, text);
     updateNote(active.id, { content: result.value });
     requestAnimationFrame(() => {
       editorRef.current?.focus();
@@ -241,6 +240,16 @@ export function EditorPane() {
     });
   }
 
+  function openMore(event: React.MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    setMenuPos({
+      top: rect.bottom + 6,
+      right: Math.max(8, window.innerWidth - rect.right),
+    });
+    setMoreOpen((open) => !open);
+  }
+
   if (!active) {
     return (
       <div className="paper-pane flex h-full min-h-0 flex-col items-center justify-center bg-paper px-6 text-center text-paper-fg">
@@ -248,15 +257,11 @@ export function EditorPane() {
           A blank page
         </p>
         <p className="mt-2 max-w-sm text-sm leading-relaxed text-paper-muted text-pretty">
-          New note from the list, or {mod}N. Link pages with [[brackets]]. Everything stays on
-          this device.
+          New note from the list, or {mod}N. Choose a markdown page or a canvas board.
         </p>
         <Button
           className="mt-6 bg-paper-fg text-paper hover:opacity-90"
-          onClick={() => {
-            createNote();
-            requestAnimationFrame(() => titleRef.current?.focus());
-          }}
+          onClick={() => setNewNoteOpen(true)}
         >
           New note
         </Button>
@@ -268,6 +273,154 @@ export function EditorPane() {
   const edited = formatEdited(active.updatedAt);
   const showSuggest = showEditor && wikiQuery !== null && suggestions.length > 0;
   const showSlash = showEditor && slashQuery !== null && slashItems.length > 0;
+
+  if (active.kind === "canvas") {
+    return (
+      <div className="paper-pane flex h-full min-h-0 flex-col bg-paper text-paper-fg">
+        <header className="flex h-12 shrink-0 items-center gap-1 border-b border-paper-line bg-paper px-2 lg:h-auto lg:px-5 lg:py-2">
+          <input
+            id="note-title"
+            ref={titleRef}
+            value={active.title}
+            onChange={(event) => updateNote(active.id, { title: event.target.value })}
+            placeholder="Untitled board"
+            aria-label="Board title"
+            className="min-w-0 flex-1 bg-transparent px-1 font-serif text-base font-medium tracking-tight text-paper-fg placeholder:text-paper-subtle outline-none lg:text-lg"
+          />
+          <p className="hidden shrink-0 px-2 text-xs text-paper-subtle lg:block">
+            <span className="tabular-nums">{edited}</span>
+            {saveFlash ? <span className="ml-2 text-paper-fg">Saved</span> : null}
+          </p>
+          <div className="relative hidden items-center lg:flex">
+            <Hint label={active.pinned ? "Unpin" : "Pin"} shortcut={`${mod}⇧P`}>
+              <Button
+                variant="quiet"
+                size="icon-sm"
+                className={cn(
+                  "text-paper-muted hover:bg-paper-hover hover:text-paper-fg",
+                  active.pinned && "text-paper-fg",
+                )}
+                onClick={() => togglePin(active.id)}
+                aria-label={active.pinned ? "Unpin board" : "Pin board"}
+              >
+                <Pin />
+              </Button>
+            </Hint>
+            <Hint label="Delete board" shortcut={`${mod}⇧⌫`}>
+              <Button
+                variant="danger"
+                size="icon-sm"
+                className="hover:bg-danger/10"
+                onClick={() => setDeleteOpen(true)}
+                aria-label="Delete board"
+              >
+                <Trash2 />
+              </Button>
+            </Hint>
+          </div>
+          <div className="relative shrink-0" ref={moreRef}>
+            <Button
+              variant="quiet"
+              size="icon"
+              className="text-paper-muted hover:bg-paper-hover hover:text-paper-fg lg:size-9"
+              onClick={openMore}
+              aria-label="More actions"
+              aria-expanded={moreOpen}
+              aria-haspopup="menu"
+            >
+              <Ellipsis />
+            </Button>
+            {moreOpen
+              ? createPortal(
+                  <>
+                    <button
+                      type="button"
+                      className="fixed inset-0 z-50 cursor-default"
+                      aria-label="Close menu"
+                      onClick={() => setMoreOpen(false)}
+                    />
+                    <div
+                      role="menu"
+                      className="fixed z-50 w-52 overflow-hidden rounded-md bg-raised py-1 text-fg shadow-border"
+                      style={{ top: menuPos.top, right: menuPos.right }}
+                    >
+                      <label className="flex h-11 w-full items-center gap-2 px-3 text-sm">
+                        <span className="w-4" />
+                        <select
+                          value={active.folderId ?? ""}
+                          onChange={(event) =>
+                            updateNote(active.id, {
+                              folderId: event.target.value ? event.target.value : null,
+                            })
+                          }
+                          className="h-9 min-w-0 flex-1 rounded-sm bg-surface px-2 text-sm text-fg outline-none"
+                          aria-label="Folder"
+                        >
+                          <option value="">Unfiled</option>
+                          {folders.map((folder) => (
+                            <option key={folder.id} value={folder.id}>
+                              {folder.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="flex h-11 w-full items-center gap-2 px-3 text-left text-sm hover:bg-surface-hover"
+                        onClick={() => {
+                          void exportDrawingImage(active.drawing, displayTitle(active.title), "png");
+                          setMoreOpen(false);
+                        }}
+                      >
+                        <Download className="size-4" /> Export PNG
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="flex h-11 w-full items-center gap-2 px-3 text-left text-sm hover:bg-surface-hover"
+                        onClick={() => {
+                          void exportDrawingImage(active.drawing, displayTitle(active.title), "jpeg");
+                          setMoreOpen(false);
+                        }}
+                      >
+                        <Download className="size-4" /> Export JPEG
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="flex h-11 w-full items-center gap-2 px-3 text-left text-sm hover:bg-surface-hover"
+                        onClick={() => {
+                          togglePin(active.id);
+                          setMoreOpen(false);
+                        }}
+                      >
+                        <Pin className="size-4" /> {active.pinned ? "Unpin" : "Pin"}
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="flex h-11 w-full items-center gap-2 px-3 text-left text-sm text-danger hover:bg-danger/10"
+                        onClick={() => {
+                          setDeleteOpen(true);
+                          setMoreOpen(false);
+                        }}
+                      >
+                        <Trash2 className="size-4" /> Delete
+                      </button>
+                    </div>
+                  </>,
+                  document.body,
+                )
+              : null}
+          </div>
+        </header>
+        <div className="min-h-0 flex-1">
+          <DrawCanvas noteId={active.id} drawing={active.drawing} title={active.title} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="paper-pane flex h-full min-h-0 flex-col bg-paper text-paper-fg">
@@ -315,14 +468,7 @@ export function EditorPane() {
           {modes.map((item) => {
             if (item.desktopOnly && !isDesktop) return null;
             const selected = mode === item.id;
-            const Icon =
-              item.id === "edit"
-                ? Pencil
-                : item.id === "preview"
-                  ? Eye
-                  : item.id === "draw"
-                    ? PenTool
-                    : Columns2;
+            const Icon = item.id === "edit" ? Pencil : item.id === "preview" ? Eye : Columns2;
             return (
               <Hint
                 key={item.id}
@@ -448,15 +594,7 @@ export function EditorPane() {
             variant="quiet"
             size="icon"
             className="text-paper-muted hover:bg-paper-hover hover:text-paper-fg lg:size-9"
-            onClick={(event) => {
-              event.stopPropagation();
-              const rect = event.currentTarget.getBoundingClientRect();
-              setMenuPos({
-                top: rect.bottom + 6,
-                right: Math.max(8, window.innerWidth - rect.right),
-              });
-              setMoreOpen((open) => !open);
-            }}
+            onClick={openMore}
             aria-label="More actions"
             aria-expanded={moreOpen}
             aria-haspopup="menu"
@@ -562,123 +700,117 @@ export function EditorPane() {
 
       {showEditor ? <FindReplace noteId={active.id} content={active.content} /> : null}
 
-      {showDraw ? (
-        <div className="min-h-0 flex-1">
-          <DrawCanvas noteId={active.id} drawing={active.drawing} />
-        </div>
-      ) : (
-        <div
-          className={cn(
-            "relative min-h-0 flex-1",
-            mode === "split" ? "grid grid-cols-2 divide-x divide-paper-line" : "flex",
-          )}
-        >
-          {showEditor ? (
-            <div className="scroll-thin relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
-              <div
-                className={cn(
-                  "mx-auto flex w-full flex-1 flex-col px-5 py-5 lg:px-10 lg:py-8",
-                  mode === "split" ? "max-w-none" : "max-w-2xl",
-                )}
-              >
-                <input
-                  id="note-title"
-                  ref={titleRef}
-                  value={active.title}
-                  onChange={(event) => updateNote(active.id, { title: event.target.value })}
-                  onKeyDown={onTitleKeyDown}
-                  placeholder="Untitled"
-                  aria-label="Note title"
-                  className="w-full bg-transparent font-serif text-2xl font-medium tracking-tight text-paper-fg placeholder:text-paper-subtle outline-none lg:text-3xl"
-                />
-                <p className="mt-2 mb-5 text-xs text-paper-subtle sm:hidden">
-                  <span className="tabular-nums">{edited}</span>
-                  {" · "}
-                  <span className="tabular-nums">
-                    {words} {words === 1 ? "word" : "words"}
-                  </span>
-                  {saveFlash ? <span className="ml-2">Saved</span> : null}
-                </p>
-                <textarea
-                  id="note-body"
-                  ref={editorRef}
-                  value={active.content}
-                  onChange={(event) => {
-                    updateNote(active.id, { content: event.target.value });
-                    setCursor(event.target.selectionStart);
-                    setSuggestIndex(0);
-                  }}
-                  onKeyUp={(event) => setCursor(event.currentTarget.selectionStart)}
-                  onClick={(event) => setCursor(event.currentTarget.selectionStart)}
-                  onSelect={(event) => setCursor(event.currentTarget.selectionStart)}
-                  onKeyDown={onEditorKeyDown}
-                  placeholder="Start writing… / for blocks, [[ for links, # for tags."
-                  aria-label="Note body"
-                  spellCheck
-                  className="min-h-48 w-full flex-1 resize-none bg-transparent pb-16 font-serif text-lg leading-writing text-paper-fg placeholder:text-paper-subtle outline-none"
-                />
-              </div>
-              {showSuggest ? (
-                <ul
-                  className="absolute bottom-6 left-5 z-10 w-64 overflow-hidden rounded-md bg-raised text-fg shadow-border md:left-10"
-                  role="listbox"
-                  aria-label="Link to note"
-                >
-                  {suggestions.map((item, index) => (
-                    <li key={`${item.create ? "create" : "note"}-${item.title}`}>
-                      <button
-                        type="button"
-                        className={cn(
-                          "w-full px-3 py-2 text-left text-sm",
-                          index === suggestIndex ? "bg-surface-hover" : "hover:bg-surface",
-                        )}
-                        onMouseDown={(event) => {
-                          event.preventDefault();
-                          applyWiki(item.title);
-                        }}
-                      >
-                        {item.create ? `Create “${item.title}”` : item.title}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-              {showSlash ? (
-                <SlashMenu
-                  query={slashQuery ?? ""}
-                  index={suggestIndex}
-                  onPick={applySlashItem}
-                />
-              ) : null}
+      <div
+        className={cn(
+          "relative min-h-0 flex-1",
+          mode === "split" ? "grid grid-cols-2 divide-x divide-paper-line" : "flex",
+        )}
+      >
+        {showEditor ? (
+          <div className="scroll-thin relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+            <div
+              className={cn(
+                "mx-auto flex w-full flex-1 flex-col px-5 py-5 lg:px-10 lg:py-8",
+                mode === "split" ? "max-w-none" : "max-w-2xl",
+              )}
+            >
+              <input
+                id="note-title"
+                ref={titleRef}
+                value={active.title}
+                onChange={(event) => updateNote(active.id, { title: event.target.value })}
+                onKeyDown={onTitleKeyDown}
+                placeholder="Untitled"
+                aria-label="Note title"
+                className="w-full bg-transparent font-serif text-2xl font-medium tracking-tight text-paper-fg placeholder:text-paper-subtle outline-none lg:text-3xl"
+              />
+              <p className="mt-2 mb-5 text-xs text-paper-subtle sm:hidden">
+                <span className="tabular-nums">{edited}</span>
+                {" · "}
+                <span className="tabular-nums">
+                  {words} {words === 1 ? "word" : "words"}
+                </span>
+                {saveFlash ? <span className="ml-2">Saved</span> : null}
+              </p>
+              <textarea
+                id="note-body"
+                ref={editorRef}
+                value={active.content}
+                onChange={(event) => {
+                  updateNote(active.id, { content: event.target.value });
+                  setCursor(event.target.selectionStart);
+                  setSuggestIndex(0);
+                }}
+                onKeyUp={(event) => setCursor(event.currentTarget.selectionStart)}
+                onClick={(event) => setCursor(event.currentTarget.selectionStart)}
+                onSelect={(event) => setCursor(event.currentTarget.selectionStart)}
+                onKeyDown={onEditorKeyDown}
+                placeholder="Start writing… / for blocks, [[ for links, # for tags."
+                aria-label="Note body"
+                spellCheck
+                className="min-h-48 w-full flex-1 resize-none bg-transparent pb-16 font-serif text-lg leading-writing text-paper-fg placeholder:text-paper-subtle outline-none"
+              />
             </div>
-          ) : null}
-
-          {showPreview ? (
-            <div className="scroll-thin min-h-0 min-w-0 flex-1 overflow-y-auto">
-              <div
-                className={cn(
-                  "mx-auto w-full px-5 py-6 md:px-10 md:py-8",
-                  mode === "split" ? "max-w-none" : "max-w-2xl",
-                )}
+            {showSuggest ? (
+              <ul
+                className="absolute bottom-6 left-5 z-10 w-64 overflow-hidden rounded-md bg-raised text-fg shadow-border md:left-10"
+                role="listbox"
+                aria-label="Link to note"
               >
-                {mode === "preview" ? (
-                  <h1 className="mb-5 font-serif text-3xl font-medium tracking-tight text-balance">
-                    {displayTitle(active.title)}
-                  </h1>
-                ) : (
-                  <p className="mb-5 font-serif text-sm tracking-wide text-paper-subtle">Preview</p>
-                )}
-                <MarkdownPreview noteId={active.id} content={active.content} />
-              </div>
+                {suggestions.map((item, index) => (
+                  <li key={`${item.create ? "create" : "note"}-${item.title}`}>
+                    <button
+                      type="button"
+                      className={cn(
+                        "w-full px-3 py-2 text-left text-sm",
+                        index === suggestIndex ? "bg-surface-hover" : "hover:bg-surface",
+                      )}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        applyWiki(item.title);
+                      }}
+                    >
+                      {item.create ? `Create “${item.title}”` : item.title}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {showSlash ? (
+              <SlashMenu
+                query={slashQuery ?? ""}
+                index={suggestIndex}
+                onPick={applySlashItem}
+              />
+            ) : null}
+          </div>
+        ) : null}
+
+        {showPreview ? (
+          <div className="scroll-thin min-h-0 min-w-0 flex-1 overflow-y-auto">
+            <div
+              className={cn(
+                "mx-auto w-full px-5 py-6 md:px-10 md:py-8",
+                mode === "split" ? "max-w-none" : "max-w-2xl",
+              )}
+            >
+              {mode === "preview" ? (
+                <h1 className="mb-5 font-serif text-3xl font-medium tracking-tight text-balance">
+                  {displayTitle(active.title)}
+                </h1>
+              ) : (
+                <p className="mb-5 font-serif text-sm tracking-wide text-paper-subtle">Preview</p>
+              )}
+              <MarkdownPreview noteId={active.id} content={active.content} />
             </div>
-          ) : null}
-        </div>
-      )}
+          </div>
+        ) : null}
+      </div>
 
-      {graphOpen && !showDraw ? <GraphPanel /> : null}
-      {!showDraw ? <MentionsPanel note={active} /> : null}
+      {graphOpen ? <GraphPanel /> : null}
+      <MentionsPanel note={active} />
 
-      {tags.length > 0 && showDraw ? (
+      {tags.length > 0 && showPreview && !showEditor ? (
         <div className="flex shrink-0 flex-wrap gap-2 border-t border-paper-line px-4 py-2">
           {tags.map((tag) => (
             <span

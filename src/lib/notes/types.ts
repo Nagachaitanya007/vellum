@@ -1,17 +1,37 @@
-export type PreviewMode = "edit" | "preview" | "split" | "draw";
+export type PreviewMode = "edit" | "preview" | "split";
 export type ThemeMode = "light" | "dark";
 export type WorkspaceView = "notes" | "graph";
 export type ListMode = "list" | "table";
 export type SyncStatus = "local" | "syncing" | "synced" | "error";
+export type NoteKind = "markdown" | "canvas";
 
 export type Folder = {
   id: string;
   name: string;
 };
 
-export type DrawTool = "pen" | "highlighter" | "eraser" | "line" | "rect" | "arrow" | "hand";
+export type DrawTool =
+  | "select"
+  | "pen"
+  | "highlighter"
+  | "eraser"
+  | "line"
+  | "rect"
+  | "ellipse"
+  | "diamond"
+  | "arrow"
+  | "text"
+  | "hand";
 export type DrawColor = "ink" | "red" | "blue" | "green" | "highlight";
-export type StrokeTool = "pen" | "highlighter" | "line" | "rect" | "arrow";
+export type StrokeTool =
+  | "pen"
+  | "highlighter"
+  | "line"
+  | "rect"
+  | "ellipse"
+  | "diamond"
+  | "arrow"
+  | "text";
 
 export type Stroke = {
   id: string;
@@ -19,6 +39,7 @@ export type Stroke = {
   color: DrawColor;
   size: number;
   points: number[];
+  text?: string;
 };
 
 export type Drawing = {
@@ -31,6 +52,7 @@ export type Note = {
   content: string;
   folderId: string | null;
   pinned: boolean;
+  kind: NoteKind;
   drawing: Drawing;
   createdAt: number;
   updatedAt: number;
@@ -49,5 +71,6 @@ export type CreateNoteInput = {
   content?: string;
   folderId?: string | null;
   pinned?: boolean;
+  kind?: NoteKind;
   drawing?: Drawing;
 };

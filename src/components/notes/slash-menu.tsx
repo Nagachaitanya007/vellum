@@ -33,7 +33,7 @@ export function SlashMenu({
             )}
             onMouseDown={(event) => {
               event.preventDefault();
-              onPick(item.insert);
+              onPick(typeof item.insert === "function" ? item.insert() : item.insert);
             }}
           >
             <span>{item.label}</span>

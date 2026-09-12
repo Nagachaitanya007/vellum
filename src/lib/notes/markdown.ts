@@ -1,5 +1,6 @@
 import { marked, type Tokens } from "marked";
 import DOMPurify from "dompurify";
+import { renderFlowHtml, renderMathHtml, renderSequenceHtml } from "./diagrams";
 
 const AMP = "&" + "amp;";
 const LT = "&" + "lt;";
@@ -65,10 +66,39 @@ const tagExtension = {
   },
 };
 
+const markExtension = {
+  name: "highlight",
+  level: "inline" as const,
+  start(src: string) {
+    return src.indexOf("==");
+  },
+  tokenizer(src: string) {
+    const match = /^==([^=\n]+)==/.exec(src);
+    if (!match) return;
+    return {
+      type: "highlight",
+      raw: match[0],
+      text: match[1],
+    };
+  },
+  renderer(token: Tokens.Generic) {
+    return `<mark class="md-mark">${escapeHtml(String(token.text ?? ""))}</mark>`;
+  },
+};
+
 marked.use({
   gfm: true,
   breaks: true,
-  extensions: [wikiExtension, tagExtension],
+  renderer: {
+    code({ text, lang }: Tokens.Code) {
+      if (lang === "seq") return renderSequenceHtml(text);
+      if (lang === "flow") return renderFlowHtml(text);
+      if (lang === "math") return renderMathHtml(text);
+      const cls = lang ? ` class="language-${escapeHtml(lang)}"` : "";
+      return `<pre><code${cls}>${escapeHtml(text)}</code></pre>\n`;
+    },
+  },
+  extensions: [wikiExtension, tagExtension, markExtension],
 });
 
 function withCallouts(html: string): string {
@@ -103,7 +133,7 @@ export function renderMarkdown(source: string, knownTitles: string[] = []): stri
   if (typeof window === "undefined") return withBoxes;
   return DOMPurify.sanitize(withBoxes, {
     USE_PROFILES: { html: true },
-    ADD_TAGS: ["input", "details", "summary"],
+    ADD_TAGS: ["input", "details", "summary", "mark"],
     ADD_ATTR: [
       "target",
       "rel",
@@ -111,6 +141,7 @@ export function renderMarkdown(source: string, knownTitles: string[] = []): stri
       "data-tag",
       "data-task",
       "data-callout",
+      "data-arrow",
       "checked",
       "open",
     ],

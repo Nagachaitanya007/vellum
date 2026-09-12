@@ -192,7 +192,7 @@ export type SlashItem = {
   id: string;
   label: string;
   hint: string;
-  insert: string;
+  insert: string | (() => string);
 };
 
 export const SLASH_ITEMS: SlashItem[] = [
@@ -229,6 +229,31 @@ export const SLASH_ITEMS: SlashItem[] = [
     label: "Embed a page",
     hint: "![[",
     insert: "![[",
+  },
+  {
+    id: "seq",
+    label: "Sequence diagram",
+    hint: "seq",
+    insert: "```seq\nAlice->Bob: Hello\nBob-->Alice: Hi\n```\n",
+  },
+  {
+    id: "flow",
+    label: "Flowchart",
+    hint: "flow",
+    insert: "```flow\nStart -> Work\nWork -> Done\n```\n",
+  },
+  {
+    id: "math",
+    label: "Math",
+    hint: "$$",
+    insert: "```math\nE = mc^2\n```\n",
+  },
+  { id: "mark", label: "Highlight", hint: "==", insert: "==highlight==" },
+  {
+    id: "today",
+    label: "Today’s date",
+    hint: "date",
+    insert: () => format(new Date(), "MMMM d, yyyy"),
   },
   {
     id: "meeting",

@@ -9,10 +9,11 @@ Sign in with Google or X to keep the same vault on your phone and computer. With
 - Folders, pins, tags, daily notes, and a paper writing surface
 - Wiki links (`[[page]]`), backlinks, unlinked mentions, and `![[page]]` embeds
 - Vault graph (pan, zoom, click to open)
-- Infinite drawing canvas (pen, highlighter, eraser, shapes)
+- New note asks for a **markdown page** or a **canvas board**
+- Canvas boards: select/move, pen, highlighter, shapes, text, undo/redo, export PNG or JPEG
 - Find and replace in the page
 - Light and dark
-- Slash commands (`/`) for headings, lists, callouts, tables, toggles, templates
+- Slash commands (`/`) for headings, lists, callouts, tables, toggles, templates, plus sequence diagrams, flowcharts, math, highlight, and today’s date
 - Table view of the note list
 - Command palette
 - Sign-in sync: write on one device, open the same account on another
@@ -37,7 +38,7 @@ Then open [http://localhost:8080](http://localhost:8080).
 
 | Shortcut | Action |
 | --- | --- |
-| `⌘/Ctrl N` | New note |
+| `⌘/Ctrl N` | New page or board |
 | `⌘/Ctrl P` | Command palette |
 | `⌘/Ctrl F` | Find in note |
 | `⌘/Ctrl H` | Find and replace |

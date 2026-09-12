@@ -35,7 +35,6 @@ export function CommandPalette() {
   const cyclePreviewMode = useNotesStore((state) => state.cyclePreviewMode);
   const toggleGraph = useNotesStore((state) => state.toggleGraph);
   const setWorkspace = useNotesStore((state) => state.setWorkspace);
-  const setPreviewMode = useNotesStore((state) => state.setPreviewMode);
   const toggleTheme = useNotesStore((state) => state.toggleTheme);
   const theme = useNotesStore((state) => state.theme);
   const setListMode = useNotesStore((state) => state.setListMode);
@@ -65,16 +64,29 @@ export function CommandPalette() {
         <Command.Empty className="cmdk-empty">No matching notes or commands.</Command.Empty>
         <Command.Group heading="Commands">
           <Command.Item
-            value="new note"
+            value="new note markdown page"
             className="cmdk-item"
             onSelect={() => {
-              createNote();
+              createNote({ kind: "markdown" });
               close();
               requestAnimationFrame(() => titleRef.current?.focus());
             }}
           >
             <FilePlus className="size-4 text-subtle" />
-            New note
+            New markdown page
+          </Command.Item>
+          <Command.Item
+            value="new canvas board drawing"
+            className="cmdk-item"
+            onSelect={() => {
+              createNote({ kind: "canvas" });
+              close();
+              setSidebarOpen(false);
+              requestAnimationFrame(() => titleRef.current?.focus());
+            }}
+          >
+            <PenTool className="size-4 text-subtle" />
+            New canvas board
           </Command.Item>
           <Command.Item
             value="daily note today"
@@ -99,19 +111,6 @@ export function CommandPalette() {
           >
             <Network className="size-4 text-subtle" />
             Vault graph
-          </Command.Item>
-          <Command.Item
-            value="draw canvas sketch"
-            className="cmdk-item"
-            onSelect={() => {
-              setWorkspace("notes");
-              setPreviewMode("draw");
-              close();
-              setSidebarOpen(false);
-            }}
-          >
-            <PenTool className="size-4 text-subtle" />
-            Draw
           </Command.Item>
           <Command.Item
             value="meeting notes template"

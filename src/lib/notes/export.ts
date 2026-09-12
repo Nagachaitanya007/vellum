@@ -47,6 +47,7 @@ export function noteToMarkdown(note: Note, folderName: string | null): string {
     `title: ${yamlScalar(displayTitle(note.title))}`,
     `folder: ${yamlScalar(folderName ?? "Unfiled")}`,
     `pinned: ${note.pinned ? "true" : "false"}`,
+    `kind: ${note.kind}`,
     `created: ${new Date(note.createdAt).toISOString()}`,
     `updated: ${new Date(note.updatedAt).toISOString()}`,
   ];

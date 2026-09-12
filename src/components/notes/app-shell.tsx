@@ -7,7 +7,7 @@ import { DeleteDialog } from "@/components/notes/delete-dialog";
 import { EditorPane } from "@/components/notes/editor-pane";
 import { LibraryFooter, LibraryRail } from "@/components/notes/library-rail";
 import { NoteList } from "@/components/notes/note-list";
-import { NotesUiProvider, useNotesUi, type ShellLayout } from "@/components/notes/notes-ui";
+import { NewNoteDialog } from "@/components/notes/new-note-dialog";
 import { ShortcutsDialog } from "@/components/notes/shortcuts-dialog";
 import { VaultGraph } from "@/components/notes/vault-graph";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import {
   useNotesStore,
 } from "@/lib/notes/store";
 import { flushVaultNow } from "@/lib/notes/sync";
+import { NotesUiProvider, useNotesUi, type ShellLayout } from "./notes-ui";
 
 function revealNotes() {
   hydrateNotesFromStorage();
@@ -92,6 +93,7 @@ export function AppShell() {
           <MobileLayout />
         )}
         <DeleteDialog />
+        <NewNoteDialog />
         <ShortcutsDialog />
         <CommandPalette />
       </NotesUiProvider>
@@ -156,14 +158,11 @@ function TabletLayout() {
 
 function MobileLayout() {
   const active = useActiveNote();
-  const createNote = useNotesStore((state) => state.createNote);
   const workspace = useNotesStore((state) => state.workspace);
-  const { sidebarOpen, setSidebarOpen, titleRef, setPaletteOpen } = useNotesUi();
+  const { sidebarOpen, setSidebarOpen, titleRef, setPaletteOpen, setNewNoteOpen } = useNotesUi();
 
   function handleCreate() {
-    createNote();
-    setSidebarOpen(false);
-    requestAnimationFrame(() => titleRef.current?.focus());
+    setNewNoteOpen(true);
   }
 
   return (
@@ -252,7 +251,6 @@ function LibraryDrawer({
 }
 
 function KeyboardBindings() {
-  const createNote = useNotesStore((state) => state.createNote);
   const cyclePreviewMode = useNotesStore((state) => state.cyclePreviewMode);
   const selectAdjacent = useNotesStore((state) => state.selectAdjacent);
   const openDailyNote = useNotesStore((state) => state.openDailyNote);
@@ -280,6 +278,7 @@ function KeyboardBindings() {
     helpOpen,
     paletteOpen,
     query,
+    setNewNoteOpen,
   } = useNotesUi();
   const filteredNotesRef = useRef(filteredNotes);
   filteredNotesRef.current = filteredNotes;
@@ -351,10 +350,7 @@ function KeyboardBindings() {
 
       if (meta && key.toLowerCase() === "n") {
         event.preventDefault();
-        createNote();
-        setQuery("");
-        setSidebarOpen(false);
-        requestAnimationFrame(() => titleRef.current?.focus());
+        setNewNoteOpen(true);
         return;
       }
 
@@ -444,9 +440,7 @@ function KeyboardBindings() {
 
       if (key === "n") {
         event.preventDefault();
-        createNote();
-        setQuery("");
-        requestAnimationFrame(() => titleRef.current?.focus());
+        setNewNoteOpen(true);
         return;
       }
 
@@ -466,7 +460,6 @@ function KeyboardBindings() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
     activeId,
-    createNote,
     cyclePreviewMode,
     deleteOpen,
     editorRef,
@@ -482,6 +475,7 @@ function KeyboardBindings() {
     setDeleteOpen,
     setFindOpen,
     setHelpOpen,
+    setNewNoteOpen,
     setPaletteOpen,
     setQuery,
     setReplaceOpen,
