@@ -3,9 +3,11 @@ import { Cloud, CloudOff, LoaderCircle } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { authEnabled, signOut } from "@/lib/auth/client";
 import { hasGateSessionMarker } from "@/lib/auth/gate-session-marker";
+import { getAuthStatus } from "@/lib/auth/status";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { flushVaultNow, startVaultSync, stopVaultSync } from "@/lib/notes/sync";
 import { useNotesStore } from "@/lib/notes/store";
+import { PRIMARY_VAULT_ID } from "@/lib/notes/types";
 import type { SyncStatus } from "@/lib/notes/types";
 
 const subscribeToNothing = () => () => {};
@@ -26,11 +28,17 @@ function syncLabel(status: SyncStatus, lastSyncedAt: number | null): string {
 
 export function VaultSyncHost() {
   const { user, isPending } = useCurrentUserState();
+  const activeVaultId = useNotesStore((state) => state.activeVaultId);
+  const syncThisVault = activeVaultId === PRIMARY_VAULT_ID;
 
   useEffect(() => {
     if (isPending) return;
     if (user && authEnabled) {
       useNotesStore.getState().adoptVaultUser(user.id);
+      if (!syncThisVault) {
+        stopVaultSync();
+        return;
+      }
       startVaultSync();
       const onVisible = () => {
         if (document.visibilityState === "visible") void flushVaultNow();
@@ -45,7 +53,7 @@ export function VaultSyncHost() {
     }
     stopVaultSync();
     useNotesStore.getState().adoptVaultUser(null);
-  }, [user?.id, isPending]);
+  }, [user?.id, isPending, syncThisVault]);
 
   return null;
 }
@@ -54,18 +62,43 @@ export function AccountFooter() {
   const { user, isPending } = useCurrentUserState();
   const syncStatus = useNotesStore((state) => state.syncStatus);
   const lastSyncedAt = useNotesStore((state) => state.lastSyncedAt);
+  const activeVaultId = useNotesStore((state) => state.activeVaultId);
   const [signingOut, setSigningOut] = useState(false);
+  const [googleConfigured, setGoogleConfigured] = useState<boolean | null>(null);
   const gateSession = useSyncExternalStore(
     subscribeToNothing,
     hasGateSessionMarker,
     noGateSessionOnServer,
   );
 
-  if (isPending) {
+  useEffect(() => {
+    if (!authEnabled) {
+      setGoogleConfigured(false);
+      return;
+    }
+    void getAuthStatus()
+      .then((status) => setGoogleConfigured(status.googleConfigured))
+      .catch(() => setGoogleConfigured(authEnabled));
+  }, []);
+
+  if (isPending || googleConfigured === null) {
     return <div className="mx-1 mb-1 h-14 animate-pulse rounded-md bg-surface" />;
   }
 
   if (!user) {
+    if (!googleConfigured) {
+      return (
+        <div className="flex items-start gap-2 rounded-md px-3 py-2 text-left text-sm text-muted">
+          <CloudOff className="mt-0.5 size-4 shrink-0" />
+          <span className="min-w-0">
+            <span className="block text-fg">On this device</span>
+            <span className="block text-xs text-subtle">
+              Google sync isn’t set up for local development. Notes stay in this browser.
+            </span>
+          </span>
+        </div>
+      );
+    }
     return (
       <Link
         to="/login"
@@ -82,6 +115,7 @@ export function AccountFooter() {
 
   const Icon = syncStatus === "syncing" ? LoaderCircle : Cloud;
   const label = user.displayName ?? user.primaryEmail ?? "Signed in";
+  const localVault = activeVaultId !== PRIMARY_VAULT_ID;
 
   return (
     <div className="rounded-md px-3 py-2">
@@ -101,7 +135,7 @@ export function AccountFooter() {
           <p className="truncate text-sm text-fg">{label}</p>
           <p className="flex items-center gap-1 text-xs text-subtle">
             <Icon className={syncStatus === "syncing" ? "size-3 animate-spin" : "size-3"} />
-            {syncLabel(syncStatus, lastSyncedAt)}
+            {localVault ? "Local vault · not synced" : syncLabel(syncStatus, lastSyncedAt)}
           </p>
         </div>
       </div>

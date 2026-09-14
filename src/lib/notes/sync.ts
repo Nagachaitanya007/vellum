@@ -1,4 +1,5 @@
 import { loadVault, saveVaultChanges } from "./api";
+import { pruneTabs } from "./helpers";
 import { mergeVault } from "./merge";
 import {
   acknowledgeUpload,
@@ -8,6 +9,7 @@ import {
 } from "./sync-engine";
 import { useNotesStore } from "./store";
 import type { SyncStatus } from "./types";
+import { PRIMARY_VAULT_ID } from "./types";
 
 export { mergeVault } from "./merge";
 
@@ -53,6 +55,25 @@ async function pushCurrentDirty() {
   useNotesStore.setState(acknowledgeUpload(toSlice(), captured.batch));
 }
 
+function applyReconciled(reconciled: ReturnType<typeof reconcileMerge>) {
+  const openTabIds = pruneTabs(
+    useNotesStore.getState().openTabIds,
+    new Set(reconciled.notes.map((note) => note.id)),
+    reconciled.activeId,
+  );
+  useNotesStore.setState({
+    notes: reconciled.notes,
+    folders: reconciled.folders,
+    dirtyNoteIds: reconciled.dirtyNoteIds,
+    pendingDeletes: reconciled.pendingDeletes,
+    pendingDeleteAt: reconciled.pendingDeleteAt,
+    dirtyFolders: reconciled.dirtyFolders,
+    foldersUpdatedAt: reconciled.foldersUpdatedAt,
+    activeId: reconciled.activeId,
+    openTabIds,
+  });
+}
+
 export async function flushVaultNow() {
   if (!syncEnabled || inFlight) return;
   inFlight = true;
@@ -61,16 +82,7 @@ export async function flushVaultNow() {
     const snapshot = await loadVault();
     const merged = mergeVault(toSlice(), snapshot);
     const reconciled = reconcileMerge(merged, toSlice());
-    useNotesStore.setState({
-      notes: reconciled.notes,
-      folders: reconciled.folders,
-      dirtyNoteIds: reconciled.dirtyNoteIds,
-      pendingDeletes: reconciled.pendingDeletes,
-      pendingDeleteAt: reconciled.pendingDeleteAt,
-      dirtyFolders: reconciled.dirtyFolders,
-      foldersUpdatedAt: reconciled.foldersUpdatedAt,
-      activeId: reconciled.activeId,
-    });
+    applyReconciled(reconciled);
 
     const captured = captureDirty(toSlice());
     if (captured) {
@@ -112,6 +124,7 @@ async function pushIfDirty() {
 }
 
 export function startVaultSync() {
+  if (useNotesStore.getState().activeVaultId !== PRIMARY_VAULT_ID) return;
   syncEnabled = true;
   setStatus("syncing");
   void flushVaultNow();

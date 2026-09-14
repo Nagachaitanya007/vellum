@@ -42,6 +42,10 @@ type NotesUiValue = {
   isDesktop: boolean;
   newNoteOpen: boolean;
   setNewNoteOpen: Dispatch<SetStateAction<boolean>>;
+  exportOpen: boolean;
+  setExportOpen: Dispatch<SetStateAction<boolean>>;
+  vaultOpen: boolean;
+  setVaultOpen: Dispatch<SetStateAction<boolean>>;
 };
 
 const NotesUiContext = createContext<NotesUiValue | null>(null);
@@ -69,6 +73,8 @@ export function NotesUiProvider({
   const [saveFlash, setSaveFlash] = useState(false);
   const [query, setQuery] = useState("");
   const [newNoteOpen, setNewNoteOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [vaultOpen, setVaultOpen] = useState(false);
   const saveTimer = useRef<number>(0);
 
   const flashSave = useCallback(() => {
@@ -116,6 +122,10 @@ export function NotesUiProvider({
       isDesktop,
       newNoteOpen,
       setNewNoteOpen,
+      exportOpen,
+      setExportOpen,
+      vaultOpen,
+      setVaultOpen,
     }),
     [
       sidebarOpen,
@@ -131,6 +141,8 @@ export function NotesUiProvider({
       layout,
       isDesktop,
       newNoteOpen,
+      exportOpen,
+      vaultOpen,
     ],
   );
 

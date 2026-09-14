@@ -1,13 +1,16 @@
+import { X } from "lucide-react";
 import { folderSwatch } from "@/lib/notes/graph-style";
 import { backlinksTo, displayTitle, extractWikiLinks, findNoteByTitle } from "@/lib/notes/helpers";
 import { useActiveNote, useNotesStore } from "@/lib/notes/store";
 import type { GraphNodeShape, Note } from "@/lib/notes/types";
+import { Button } from "@/components/ui/button";
 import { useNotesUi } from "./notes-ui";
 
 export function GraphPanel() {
   const notes = useNotesStore((state) => state.notes);
   const openWiki = useNotesStore((state) => state.openWiki);
   const graphStyle = useNotesStore((state) => state.graphStyle);
+  const setGraphOpen = useNotesStore((state) => state.setGraphOpen);
   const { isDesktop } = useNotesUi();
   const note = useActiveNote();
   if (!note) return null;
@@ -15,12 +18,29 @@ export function GraphPanel() {
   const outgoing = extractWikiLinks(note.content);
   const incoming = backlinksTo(notes, note);
 
+  function GraphHeader() {
+    return (
+      <div className="mb-2 flex items-center justify-between gap-2 px-1">
+        <p className="text-xs font-medium tracking-wide text-paper-subtle uppercase">
+          Local graph
+        </p>
+        <Button
+          variant="quiet"
+          size="icon-sm"
+          className="size-8 text-paper-muted hover:bg-paper-hover hover:text-paper-fg"
+          onClick={() => setGraphOpen(false)}
+          aria-label="Hide local graph"
+        >
+          <X className="size-3.5" />
+        </Button>
+      </div>
+    );
+  }
+
   if (!isDesktop) {
     return (
       <div className="border-t border-paper-line bg-paper px-4 py-3 text-paper-fg">
-        <p className="mb-2 text-xs font-medium tracking-wide text-paper-subtle uppercase">
-          Local graph
-        </p>
+        <GraphHeader />
         {incoming.length === 0 && outgoing.length === 0 ? (
           <p className="text-xs text-paper-muted">
             Link this page with [[brackets]] to grow the graph.
@@ -65,9 +85,7 @@ export function GraphPanel() {
 
   return (
     <div className="border-t border-paper-line bg-paper px-3 py-3 text-paper-fg">
-      <p className="mb-2 px-1 text-xs font-medium tracking-wide text-paper-subtle uppercase">
-        Local graph
-      </p>
+      <GraphHeader />
       <svg
         viewBox="0 0 440 220"
         className="h-44 w-full"

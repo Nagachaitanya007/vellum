@@ -309,18 +309,41 @@ html[data-theme="dark"] {
   padding: 0.12em 0.35em;
 }
 
-.md-preview pre {
+.md-preview .md-code {
+  margin: 0 0 1em;
+}
+
+.md-preview .md-code-lang {
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-paper-subtle);
+  margin-bottom: 0.35em;
+}
+
+.md-preview pre,
+.md-preview .md-code pre {
   background: color-mix(in oklab, currentColor 6%, transparent);
   border-radius: var(--radius-md);
   padding: 1em 1.1em;
   overflow-x: auto;
+  white-space: pre;
+  tab-size: 2;
+  font-family: var(--font-mono);
 }
 
-.md-preview pre code {
+.md-preview pre code,
+.md-preview .md-code pre code {
+  display: block;
   background: transparent;
   padding: 0;
   font-size: 0.8125rem;
   line-height: 1.55;
+  white-space: inherit;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .md-preview .md-mark {

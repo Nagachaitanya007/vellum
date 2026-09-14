@@ -1,6 +1,6 @@
 import { marked, type Tokens } from "marked";
 import DOMPurify from "dompurify";
-import { renderFlowHtml, renderMathHtml, renderSequenceHtml } from "./diagrams";
+import { renderFlowHtml, renderMathHtml, renderSequenceHtml } from "./diagrams.ts";
 
 const AMP = "&" + "amp;";
 const LT = "&" + "lt;";
@@ -91,11 +91,16 @@ marked.use({
   breaks: true,
   renderer: {
     code({ text, lang }: Tokens.Code) {
-      if (lang === "seq") return renderSequenceHtml(text);
-      if (lang === "flow") return renderFlowHtml(text);
-      if (lang === "math") return renderMathHtml(text);
-      const cls = lang ? ` class="language-${escapeHtml(lang)}"` : "";
-      return `<pre><code${cls}>${escapeHtml(text)}</code></pre>\n`;
+      const body = text ?? "";
+      const language = (lang ?? "").trim().split(/[\s{]/)[0] ?? "";
+      if (language === "seq") return renderSequenceHtml(body);
+      if (language === "flow") return renderFlowHtml(body);
+      if (language === "math") return renderMathHtml(body);
+      const cls = language ? ` class="language-${escapeHtml(language)}"` : "";
+      const label = language
+        ? `<div class="md-code-lang">${escapeHtml(language)}</div>`
+        : "";
+      return `<div class="md-code">${label}<pre><code${cls}>${escapeHtml(body)}\n</code></pre></div>\n`;
     },
   },
   extensions: [wikiExtension, tagExtension, markExtension],

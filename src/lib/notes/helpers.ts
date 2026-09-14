@@ -1,5 +1,5 @@
 import { format, formatDistanceToNowStrict, isToday, isYesterday } from "date-fns";
-import type { LibraryFilter, Note } from "./types";
+import type { LibraryFilter, Note } from "./types.ts";
 
 export function displayTitle(title: string): string {
   const trimmed = title.trim();
@@ -59,6 +59,22 @@ export function wrapSelection(
     start: start + before.length,
     end: end + before.length,
   };
+}
+
+/** True when `index` sits inside an unclosed ``` fenced code block. */
+export function isInsideFencedCode(value: string, index: number): boolean {
+  let inFence = false;
+  let i = 0;
+  const end = Math.max(0, Math.min(index, value.length));
+  while (i < end) {
+    const nl = value.indexOf("\n", i);
+    const lineEnd = nl === -1 || nl > end ? end : nl;
+    const line = value.slice(i, lineEnd);
+    if (/^ {0,3}```/.test(line)) inFence = !inFence;
+    if (nl === -1 || nl >= end) break;
+    i = nl + 1;
+  }
+  return inFence;
 }
 
 export function extractWikiLinks(content: string): string[] {
@@ -155,6 +171,7 @@ export function toggleTaskAt(content: string, index: number): string {
 }
 
 export function openWikiQuery(value: string, cursor: number): string | null {
+  if (isInsideFencedCode(value, cursor)) return null;
   const before = value.slice(0, cursor);
   const match = /\[\[([^[\]]*)$/.exec(before);
   if (!match) return null;
@@ -179,6 +196,7 @@ export function insertWikiLink(
 }
 
 export function openSlashQuery(value: string, cursor: number): string | null {
+  if (isInsideFencedCode(value, cursor)) return null;
   const before = value.slice(0, cursor);
   const lineStart = before.lastIndexOf("\n") + 1;
   const line = before.slice(lineStart);
@@ -210,7 +228,7 @@ export const SLASH_ITEMS: SlashItem[] = [
     insert: "> [!note]\n> ",
   },
   { id: "divider", label: "Divider", hint: "---", insert: "---\n\n" },
-  { id: "code", label: "Code block", hint: "```", insert: "```\n\n```\n" },
+  { id: "code", label: "Code block", hint: "```", insert: "```js\n\n```\n" },
   {
     id: "table",
     label: "Table",
@@ -277,7 +295,10 @@ export function applySlash(
   const before = value.slice(0, cursor);
   const lineStart = before.lastIndexOf("\n") + 1;
   const next = `${value.slice(0, lineStart)}${insert}${value.slice(cursor)}`;
-  return { value: next, cursor: lineStart + insert.length };
+  const opening = /^```[^\n]*\n/.exec(insert);
+  const cursorOffset =
+    opening && insert.includes("\n```") ? opening[0].length : insert.length;
+  return { value: next, cursor: lineStart + cursorOffset };
 }
 
 export function findAll(text: string, query: string, caseSensitive: boolean): number[] {
@@ -324,6 +345,7 @@ export function splitEmbeds(content: string): ContentChunk[] {
   let last = 0;
   let match: RegExpExecArray | null;
   while ((match = re.exec(content))) {
+    if (isInsideFencedCode(content, match.index)) continue;
     if (match.index > last) out.push({ type: "md", value: content.slice(last, match.index) });
     const title = match[1]?.trim();
     if (title) out.push({ type: "embed", title });
@@ -332,6 +354,29 @@ export function splitEmbeds(content: string): ContentChunk[] {
   if (last < content.length) out.push({ type: "md", value: content.slice(last) });
   if (out.length === 0) out.push({ type: "md", value: content });
   return out;
+}
+
+export function openTab(ids: string[], id: string): string[] {
+  return ids.includes(id) ? ids : [...ids, id];
+}
+
+export function closeTab(
+  ids: string[],
+  id: string,
+  activeId: string | null,
+): { ids: string[]; activeId: string | null } {
+  const index = ids.indexOf(id);
+  if (index === -1) return { ids, activeId };
+  const next = ids.filter((item) => item !== id);
+  if (activeId !== id) return { ids: next, activeId };
+  const fallback = next[index] ?? next[index - 1] ?? next[0] ?? null;
+  return { ids: next, activeId: fallback };
+}
+
+export function pruneTabs(ids: string[], noteIds: Set<string>, activeId: string | null): string[] {
+  const kept = ids.filter((id) => noteIds.has(id));
+  if (activeId && noteIds.has(activeId) && !kept.includes(activeId)) kept.push(activeId);
+  return kept;
 }
 
 export function noteMatchesFilter(note: Note, filter: LibraryFilter): boolean {

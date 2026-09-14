@@ -17,7 +17,7 @@ import {
   Sun,
   Table2,
 } from "lucide-react";
-import { exportNoteMarkdown, exportVaultZip } from "@/lib/notes/export";
+import { exportNoteMarkdown } from "@/lib/notes/export";
 import { allTags, displayTitle } from "@/lib/notes/helpers";
 import { flushVaultNow } from "@/lib/notes/sync";
 import { useNotesStore } from "@/lib/notes/store";
@@ -39,7 +39,7 @@ export function CommandPalette() {
   const theme = useNotesStore((state) => state.theme);
   const setListMode = useNotesStore((state) => state.setListMode);
   const activeId = useNotesStore((state) => state.activeId);
-  const { paletteOpen, setPaletteOpen, titleRef, isDesktop, setSidebarOpen, setFindOpen, setReplaceOpen } =
+  const { paletteOpen, setPaletteOpen, titleRef, isDesktop, setSidebarOpen, setFindOpen, setReplaceOpen, setExportOpen } =
     useNotesUi();
   const tags = allTags(notes);
 
@@ -152,15 +152,15 @@ export function CommandPalette() {
             Download this note
           </Command.Item>
           <Command.Item
-            value="export vault zip google drive markdown"
+            value="export download vault markdown zip"
             className="cmdk-item"
             onSelect={() => {
-              exportVaultZip(notes, folders);
+              setExportOpen(true);
               close();
             }}
           >
             <Download className="size-4 text-subtle" />
-            Download vault
+            Export notes…
           </Command.Item>
           <Command.Item
             value="toggle theme light dark"

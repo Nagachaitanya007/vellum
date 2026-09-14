@@ -7,6 +7,7 @@ import {
   Inbox,
   Moon,
   Network,
+  PanelLeftClose,
   Pin,
   StickyNote,
   Sun,
@@ -15,16 +16,18 @@ import {
 import { useState, type FormEvent } from "react";
 import { AccountFooter } from "@/components/notes/account-sync";
 import { Button } from "@/components/ui/button";
-import { exportVaultZip } from "@/lib/notes/export";
 import { allTags } from "@/lib/notes/helpers";
-import { useNotesStore } from "@/lib/notes/store";
+import { useActiveVault, useNotesStore } from "@/lib/notes/store";
 import { cn } from "@/lib/utils";
+import { useNotesUi } from "./notes-ui";
 
 export function LibraryRail({
   onClose,
+  onCollapse,
   compact = false,
 }: {
   onClose?: () => void;
+  onCollapse?: () => void;
   compact?: boolean;
 }) {
   const notes = useNotesStore((state) => state.notes);
@@ -38,6 +41,8 @@ export function LibraryRail({
   const setWorkspace = useNotesStore((state) => state.setWorkspace);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
+  const vault = useActiveVault();
+  const { setVaultOpen } = useNotesUi();
 
   const tags = allTags(notes);
   const pinnedCount = notes.filter((note) => note.pinned).length;
@@ -102,8 +107,21 @@ export function LibraryRail({
       <div className={cn("flex items-center gap-2 px-4", compact ? "pt-3 pb-2" : "pt-5 pb-3")}>
         <div className="min-w-0 flex-1">
           <p className="font-serif text-lg font-medium tracking-tight text-fg">Vellum</p>
-          {compact ? null : <p className="text-xs text-subtle">Notes + links</p>}
+          {compact ? null : (
+            <button
+              type="button"
+              className="mt-0.5 block max-w-full truncate text-left text-xs text-subtle hover:text-fg"
+              onClick={() => setVaultOpen(true)}
+            >
+              {vault.name}
+            </button>
+          )}
         </div>
+        {onCollapse ? (
+          <Button variant="quiet" size="icon" onClick={onCollapse} aria-label="Collapse library">
+            <PanelLeftClose />
+          </Button>
+        ) : null}
         {onClose ? (
           <Button variant="quiet" size="icon" onClick={onClose} aria-label="Close library">
             <X />
@@ -283,21 +301,29 @@ function ChipButton({
 }
 
 export function LibraryFooter() {
-  const notes = useNotesStore((state) => state.notes);
-  const folders = useNotesStore((state) => state.folders);
   const theme = useNotesStore((state) => state.theme);
   const toggleTheme = useNotesStore((state) => state.toggleTheme);
+  const { setExportOpen, setVaultOpen } = useNotesUi();
+  const vault = useActiveVault();
 
   return (
     <div className="shrink-0 border-t border-border p-2">
       <AccountFooter />
       <button
         type="button"
-        onClick={() => exportVaultZip(notes, folders)}
+        onClick={() => setVaultOpen(true)}
+        className="flex h-11 w-full items-center gap-2 rounded-md px-3 text-sm text-muted hover:bg-surface-hover hover:text-fg"
+      >
+        <Folder className="size-4" />
+        <span className="min-w-0 truncate">{vault.name}</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => setExportOpen(true)}
         className="flex h-11 w-full items-center gap-2 rounded-md px-3 text-sm text-muted hover:bg-surface-hover hover:text-fg"
       >
         <Download className="size-4" />
-        Download vault
+        Export
       </button>
       <button
         type="button"

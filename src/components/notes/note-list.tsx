@@ -1,4 +1,4 @@
-import { LayoutList, Menu, PenTool, Pin, Plus, Search, Table2 } from "lucide-react";
+import { LayoutList, Menu, PanelLeftClose, PenTool, Pin, Plus, Search, Table2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/tooltip";
@@ -7,7 +7,7 @@ import { useFolderName, useNotesStore } from "@/lib/notes/store";
 import { cn, modLabel } from "@/lib/utils";
 import { useNotesUi } from "./notes-ui";
 
-export function NoteList() {
+export function NoteList({ onCollapse }: { onCollapse?: () => void }) {
   const folders = useNotesStore((state) => state.folders);
   const filter = useNotesStore((state) => state.filter);
   const activeId = useNotesStore((state) => state.activeId);
@@ -33,7 +33,7 @@ export function NoteList() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-surface">
+    <div className="flex h-full min-h-0 min-w-0 flex-col bg-surface">
       <div className="flex items-center gap-2 px-3 pt-4 pb-2">
         {layout !== "desktop" ? (
           <Button
@@ -45,6 +45,18 @@ export function NoteList() {
           >
             <Menu />
           </Button>
+        ) : null}
+        {onCollapse ? (
+          <Hint label="Collapse note list">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={onCollapse}
+              aria-label="Collapse note list"
+            >
+              <PanelLeftClose />
+            </Button>
+          </Hint>
         ) : null}
         <p className="min-w-0 flex-1 truncate text-sm font-medium text-fg">
           {filterLabel(filter, folders)}
@@ -148,7 +160,7 @@ export function NoteList() {
                     onClick={() => handleSelect(note.id)}
                     aria-current={active ? "true" : undefined}
                     className={cn(
-                      "w-full px-4 py-3.5 text-left transition-[background-color] duration-quick ease-smooth",
+                      "w-full min-w-0 px-4 py-3.5 text-left transition-[background-color] duration-quick ease-smooth",
                       "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent",
                       active ? "bg-bg" : "hover:bg-surface-hover",
                     )}
@@ -159,8 +171,8 @@ export function NoteList() {
                       ) : note.pinned ? (
                         <Pin className="mt-0.5 size-3.5 shrink-0 text-subtle" />
                       ) : null}
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-fg">
+                      <span className="min-w-0 flex-1 overflow-hidden">
+                        <span className="block truncate text-sm font-medium text-fg" title={displayTitle(note.title)}>
                           {displayTitle(note.title)}
                         </span>
                         <span className="mt-1 flex items-center gap-2 text-xs text-subtle">

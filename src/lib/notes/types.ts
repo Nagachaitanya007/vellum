@@ -93,6 +93,30 @@ export type LibraryFilter =
   | { type: "folder"; id: string }
   | { type: "tag"; tag: string };
 
+export type VaultKind = "synced" | "local";
+
+export type VaultRecord = {
+  id: string;
+  name: string;
+  createdAt: number;
+  kind: VaultKind;
+};
+
+export type VaultPayload = {
+  notes: Note[];
+  folders: Folder[];
+  activeId: string | null;
+  openTabIds: string[];
+  filter: LibraryFilter;
+  dirtyNoteIds: string[];
+  pendingDeletes: string[];
+  pendingDeleteAt: Record<string, number>;
+  dirtyFolders: boolean;
+  foldersUpdatedAt: number;
+};
+
+export const PRIMARY_VAULT_ID = "primary";
+
 export type CreateNoteInput = {
   title?: string;
   content?: string;

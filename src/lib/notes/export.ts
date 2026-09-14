@@ -1,6 +1,6 @@
 import { format } from "date-fns";
-import { displayTitle, extractTags } from "./helpers";
-import type { Folder, Note } from "./types";
+import { displayTitle, extractTags } from "./helpers.ts";
+import type { Folder, Note } from "./types.ts";
 
 const encoder = new TextEncoder();
 
@@ -160,12 +160,39 @@ export function exportNoteMarkdown(note: Note, folders: Folder[]) {
   downloadBlob(new Blob([markdown], { type: "text/markdown;charset=utf-8" }), filename);
 }
 
-export function exportVaultZip(notes: Note[], folders: Folder[]) {
+export type ExportScope =
+  | { type: "vault" }
+  | { type: "folder"; folderId: string | null }
+  | { type: "notes"; ids: string[] }
+  | { type: "note"; id: string };
+
+export function notesForExport(notes: Note[], scope: ExportScope): Note[] {
+  switch (scope.type) {
+    case "vault":
+      return notes;
+    case "folder":
+      return notes.filter((note) => note.folderId === scope.folderId);
+    case "notes": {
+      const want = new Set(scope.ids);
+      return notes.filter((note) => want.has(note.id));
+    }
+    case "note":
+      return notes.filter((note) => note.id === scope.id);
+  }
+}
+
+export function exportVaultZip(
+  notes: Note[],
+  folders: Folder[],
+  options: { filename?: string; vaultName?: string } = {},
+) {
   const used = new Set<string>();
   const files: ZipFile[] = [];
+  const vaultName = options.vaultName?.trim() || "Vellum";
   const readme = [
-    "Vellum export",
+    `${vaultName} export`,
     "",
+    "This is a download of a Vellum vault — a copy of notes, not the live workspace.",
     "Drop this folder into Google Drive (or any other files app).",
     "Each .md file is one note. Wiki links use [[Page title]].",
     "If a note had a drawing, a matching .drawing.json sits beside it.",
@@ -191,5 +218,30 @@ export function exportVaultZip(notes: Note[], folders: Folder[]) {
   }
 
   const stamp = format(new Date(), "yyyy-MM-dd");
-  downloadBlob(zipStore(files), `vellum-notes-${stamp}.zip`);
+  const filename = options.filename ?? `vellum-notes-${stamp}.zip`;
+  downloadBlob(zipStore(files), filename);
+}
+
+export function exportScope(
+  notes: Note[],
+  folders: Folder[],
+  scope: ExportScope,
+  options: { vaultName?: string } = {},
+) {
+  const selected = notesForExport(notes, scope);
+  if (selected.length === 1 && selected[0] && (scope.type === "note" || scope.type === "notes")) {
+    exportNoteMarkdown(selected[0], folders);
+    return;
+  }
+  const vaultName = options.vaultName?.trim() || "Vellum";
+  const stamp = format(new Date(), "yyyy-MM-dd");
+  let filename = `${safeSegment(vaultName)}-${stamp}.zip`;
+  if (scope.type === "folder") {
+    const folder =
+      scope.folderId === null
+        ? "Unfiled"
+        : (folders.find((item) => item.id === scope.folderId)?.name ?? "Folder");
+    filename = `${safeSegment(vaultName)}-${safeSegment(folder)}-${stamp}.zip`;
+  }
+  exportVaultZip(selected, folders, { filename, vaultName });
 }

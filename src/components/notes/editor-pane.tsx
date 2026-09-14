@@ -5,6 +5,7 @@ import {
   Eye,
   Keyboard,
   Network,
+  PanelLeft,
   Pencil,
   Pin,
   Save,
@@ -18,6 +19,7 @@ import { FindReplace } from "@/components/notes/find-replace";
 import { GraphPanel } from "@/components/notes/graph-panel";
 import { MarkdownPreview } from "@/components/notes/markdown-preview";
 import { MentionsPanel } from "@/components/notes/mentions-panel";
+import { NoteTabs } from "@/components/notes/note-tabs";
 import { SlashMenu, slashItemsFor } from "@/components/notes/slash-menu";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/tooltip";
@@ -67,6 +69,8 @@ export function EditorPane() {
     setReplaceOpen,
     saveFlash,
     flashSave,
+    layout,
+    setSidebarOpen,
   } = useNotesUi();
   const mod = modLabel();
   const [suggestIndex, setSuggestIndex] = useState(0);
@@ -252,7 +256,18 @@ export function EditorPane() {
 
   if (!active) {
     return (
-      <div className="paper-pane flex h-full min-h-0 flex-col items-center justify-center bg-paper px-6 text-center text-paper-fg">
+      <div className="paper-pane flex h-full min-h-0 flex-col bg-paper text-paper-fg">
+        <NoteTabs />
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
+        {layout === "tablet" ? (
+          <Button
+            variant="quiet"
+            className="mb-4"
+            onClick={() => setSidebarOpen(true)}
+          >
+            <PanelLeft /> Open notes
+          </Button>
+        ) : null}
         <p className="font-serif text-2xl font-medium tracking-tight text-balance">
           A blank page
         </p>
@@ -266,6 +281,7 @@ export function EditorPane() {
           New note
         </Button>
       </div>
+      </div>
     );
   }
 
@@ -277,7 +293,19 @@ export function EditorPane() {
   if (active.kind === "canvas") {
     return (
       <div className="paper-pane flex h-full min-h-0 flex-col bg-paper text-paper-fg">
+        <NoteTabs />
         <header className="flex h-12 shrink-0 items-center gap-1 border-b border-paper-line bg-paper px-2 lg:h-auto lg:px-5 lg:py-2">
+          {layout === "tablet" ? (
+            <Button
+              variant="quiet"
+              size="icon"
+              className="text-paper-muted hover:bg-paper-hover hover:text-paper-fg"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open library"
+            >
+              <PanelLeft />
+            </Button>
+          ) : null}
           <input
             id="note-title"
             ref={titleRef}
@@ -424,7 +452,19 @@ export function EditorPane() {
 
   return (
     <div className="paper-pane flex h-full min-h-0 flex-col bg-paper text-paper-fg">
+      <NoteTabs />
       <header className="flex h-12 shrink-0 items-center gap-1 border-b border-paper-line bg-paper px-2 lg:h-auto lg:px-5 lg:py-2">
+        {layout === "tablet" ? (
+          <Button
+            variant="quiet"
+            size="icon"
+            className="text-paper-muted hover:bg-paper-hover hover:text-paper-fg"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open library"
+          >
+            <PanelLeft />
+          </Button>
+        ) : null}
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
         <p className="hidden min-w-0 flex-1 truncate px-1 text-sm text-paper-muted lg:block">
           <span className="text-paper-fg">{displayTitle(active.title)}</span>
@@ -552,7 +592,7 @@ export function EditorPane() {
               <Pin />
             </Button>
           </Hint>
-          <Hint label="Local graph">
+          <Hint label={graphOpen ? "Hide local graph" : "Local graph"}>
             <Button
               variant="quiet"
               size="icon-sm"
@@ -561,7 +601,7 @@ export function EditorPane() {
                 graphOpen && "text-paper-fg",
               )}
               onClick={toggleGraph}
-              aria-label="Toggle local graph"
+              aria-label={graphOpen ? "Hide local graph" : "Show local graph"}
             >
               <Network />
             </Button>
@@ -701,6 +741,7 @@ export function EditorPane() {
       {showEditor ? <FindReplace noteId={active.id} content={active.content} /> : null}
 
       <div
+        key={active.id}
         className={cn(
           "relative min-h-0 flex-1",
           mode === "split" ? "grid grid-cols-2 divide-x divide-paper-line" : "flex",

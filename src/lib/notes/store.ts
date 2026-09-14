@@ -5,6 +5,9 @@ import {
   dailyTitle,
   displayTitle,
   findNoteByTitle,
+  closeTab,
+  openTab,
+  pruneTabs,
   sortNotes,
 } from "./helpers";
 import { DEFAULT_GRAPH_STYLE, normalizeGraphStyle } from "./graph-style";
@@ -23,8 +26,12 @@ import type {
   PreviewMode,
   SyncStatus,
   ThemeMode,
+  VaultKind,
+  VaultPayload,
+  VaultRecord,
   WorkspaceView,
 } from "./types";
+import { PRIMARY_VAULT_ID } from "./types";
 
 const STORAGE_KEY = "vellum-notes-v3";
 const LEGACY_KEYS = ["vellum-notes-v2", "vellum-notes-v1"];
@@ -93,6 +100,7 @@ type NotesState = {
   notes: Note[];
   folders: Folder[];
   activeId: string | null;
+  openTabIds: string[];
   filter: LibraryFilter;
   previewMode: PreviewMode;
   graphOpen: boolean;
@@ -111,6 +119,9 @@ type NotesState = {
   lastSyncedAt: number | null;
   vaultOwnerId: string | null;
   lastVaultOwnerId: string | null;
+  vaults: VaultRecord[];
+  activeVaultId: string;
+  vaultPayloads: Record<string, VaultPayload>;
   adoptVaultUser: (userId: string | null) => void;
   createNote: (input?: CreateNoteInput) => string;
   deleteNote: (id: string) => void;
@@ -120,6 +131,7 @@ type NotesState = {
   ) => void;
   togglePin: (id: string) => void;
   selectNote: (id: string) => void;
+  closeNoteTab: (id: string) => void;
   setFilter: (filter: LibraryFilter) => void;
   setPreviewMode: (mode: PreviewMode) => void;
   cyclePreviewMode: (allowSplit: boolean) => void;
@@ -129,6 +141,7 @@ type NotesState = {
   openDailyNote: () => string;
   openWiki: (title: string) => string;
   toggleGraph: () => void;
+  setGraphOpen: (open: boolean) => void;
   setWorkspace: (view: WorkspaceView) => void;
   setTheme: (theme: ThemeMode) => void;
   toggleTheme: () => void;
@@ -136,17 +149,22 @@ type NotesState = {
   setGraphStyle: (patch: Partial<GraphStyle>) => void;
   updateDrawing: (id: string, drawing: Drawing) => void;
   setHasHydrated: (value: boolean) => void;
+  createVault: (name: string) => string;
+  switchVault: (id: string) => void;
+  renameVault: (id: string, name: string) => void;
 };
 
 type PersistedSlice = {
   notes?: Array<Partial<Note> & { id: string }>;
   folders?: Folder[];
   activeId?: string | null;
+  openTabIds?: string[];
   filter?: LibraryFilter;
   previewMode?: PreviewMode;
   theme?: ThemeMode;
   listMode?: ListMode;
   graphStyle?: Partial<GraphStyle>;
+  graphOpen?: boolean;
   initialized?: boolean;
   dirtyNoteIds?: string[];
   pendingDeletes?: string[];
@@ -155,6 +173,9 @@ type PersistedSlice = {
   foldersUpdatedAt?: number;
   vaultOwnerId?: string | null;
   lastVaultOwnerId?: string | null;
+  vaults?: VaultRecord[];
+  activeVaultId?: string;
+  vaultPayloads?: Record<string, VaultPayload>;
 };
 
 function withDirty(ids: string[], id: string): string[] {
@@ -197,6 +218,82 @@ function folderIdForNew(filter: LibraryFilter): string | null {
   return filter.type === "folder" ? filter.id : null;
 }
 
+function emptyPayload(): VaultPayload {
+  return {
+    notes: [],
+    folders: DEFAULT_FOLDERS,
+    activeId: null,
+    openTabIds: [],
+    filter: { type: "all" },
+    dirtyNoteIds: [],
+    pendingDeletes: [],
+    pendingDeleteAt: {},
+    dirtyFolders: true,
+    foldersUpdatedAt: Date.now(),
+  };
+}
+
+function capturePayload(state: {
+  notes: Note[];
+  folders: Folder[];
+  activeId: string | null;
+  openTabIds: string[];
+  filter: LibraryFilter;
+  dirtyNoteIds: string[];
+  pendingDeletes: string[];
+  pendingDeleteAt: Record<string, number>;
+  dirtyFolders: boolean;
+  foldersUpdatedAt: number;
+}): VaultPayload {
+  return {
+    notes: state.notes,
+    folders: state.folders,
+    activeId: state.activeId,
+    openTabIds: state.openTabIds,
+    filter: state.filter,
+    dirtyNoteIds: state.dirtyNoteIds,
+    pendingDeletes: state.pendingDeletes,
+    pendingDeleteAt: state.pendingDeleteAt,
+    dirtyFolders: state.dirtyFolders,
+    foldersUpdatedAt: state.foldersUpdatedAt,
+  };
+}
+
+function defaultVaults(): VaultRecord[] {
+  return [
+    {
+      id: PRIMARY_VAULT_ID,
+      name: "My vault",
+      createdAt: Date.now(),
+      kind: "synced",
+    },
+  ];
+}
+
+function normalizeVaults(raw: unknown): VaultRecord[] {
+  if (!Array.isArray(raw) || raw.length === 0) return defaultVaults();
+  const out: VaultRecord[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Partial<VaultRecord>;
+    if (typeof rec.id !== "string" || typeof rec.name !== "string") continue;
+    if (seen.has(rec.id)) continue;
+    seen.add(rec.id);
+    const kind: VaultKind = rec.kind === "local" ? "local" : rec.id === PRIMARY_VAULT_ID ? "synced" : "local";
+    out.push({
+      id: rec.id,
+      name: rec.name.trim() || "Untitled vault",
+      createdAt: typeof rec.createdAt === "number" ? rec.createdAt : Date.now(),
+      kind: rec.id === PRIMARY_VAULT_ID ? "synced" : kind,
+    });
+  }
+  if (!out.some((vault) => vault.id === PRIMARY_VAULT_ID)) {
+    out.unshift(defaultVaults()[0]!);
+  }
+  return out.length > 0 ? out : defaultVaults();
+}
+
 function applyPersisted(data: PersistedSlice) {
   const incoming = Array.isArray(data.notes) ? data.notes.map(normalizeNote) : [];
   const folders =
@@ -209,15 +306,18 @@ function applyPersisted(data: PersistedSlice) {
 
   if (!data.initialized) {
     const seeded = seedNotes();
+    const firstId = seeded.find((note) => note.pinned)?.id ?? seeded[0]?.id ?? null;
     useNotesStore.setState({
       notes: sortNotes(seeded),
       folders: DEFAULT_FOLDERS,
-      activeId: seeded.find((note) => note.pinned)?.id ?? seeded[0]?.id ?? null,
+      activeId: firstId,
+      openTabIds: firstId ? [firstId] : [],
       filter: { type: "all" },
       previewMode,
       theme,
       listMode,
       graphStyle,
+      graphOpen: false,
       initialized: true,
       hasHydrated: true,
       dirtyNoteIds: [],
@@ -227,26 +327,42 @@ function applyPersisted(data: PersistedSlice) {
       foldersUpdatedAt: Date.now(),
       vaultOwnerId: null,
       lastVaultOwnerId: null,
+      vaults: defaultVaults(),
+      activeVaultId: PRIMARY_VAULT_ID,
+      vaultPayloads: {},
     });
     return;
   }
 
   const notes = sortNotes(incoming);
+  const noteIds = new Set(notes.map((note) => note.id));
   const activeId =
     data.activeId && notes.some((note) => note.id === data.activeId)
       ? data.activeId
       : (notes[0]?.id ?? null);
+  const openTabIds = pruneTabs(
+    Array.isArray(data.openTabIds) ? data.openTabIds.filter((id) => typeof id === "string") : [],
+    noteIds,
+    activeId,
+  );
   const foldersUpdatedAt = typeof data.foldersUpdatedAt === "number" ? data.foldersUpdatedAt : 0;
   observeRevision(foldersUpdatedAt);
+  const vaults = normalizeVaults(data.vaults);
+  const activeVaultId =
+    typeof data.activeVaultId === "string" && vaults.some((vault) => vault.id === data.activeVaultId)
+      ? data.activeVaultId
+      : PRIMARY_VAULT_ID;
   useNotesStore.setState({
     notes,
     folders,
     activeId,
+    openTabIds,
     filter: data.filter ?? { type: "all" },
     previewMode,
     theme,
     listMode,
     graphStyle,
+    graphOpen: Boolean(data.graphOpen),
     initialized: true,
     hasHydrated: true,
     dirtyNoteIds: Array.isArray(data.dirtyNoteIds) ? data.dirtyNoteIds : [],
@@ -261,6 +377,10 @@ function applyPersisted(data: PersistedSlice) {
         : typeof data.vaultOwnerId === "string"
           ? data.vaultOwnerId
           : null,
+    vaults,
+    activeVaultId,
+    vaultPayloads:
+      data.vaultPayloads && typeof data.vaultPayloads === "object" ? data.vaultPayloads : {},
   });
 }
 
@@ -312,6 +432,7 @@ export const useNotesStore = create<NotesState>()(
       notes: [],
       folders: [],
       activeId: null,
+      openTabIds: [],
       filter: { type: "all" },
       previewMode: "edit",
       graphOpen: false,
@@ -330,6 +451,9 @@ export const useNotesStore = create<NotesState>()(
       lastSyncedAt: null,
       vaultOwnerId: null,
       lastVaultOwnerId: null,
+      vaults: defaultVaults(),
+      activeVaultId: PRIMARY_VAULT_ID,
+      vaultPayloads: {},
 
       setHasHydrated: (value) => set({ hasHydrated: value }),
 
@@ -349,19 +473,34 @@ export const useNotesStore = create<NotesState>()(
           });
           return;
         }
+        const state = get();
+        const onSynced = state.activeVaultId === PRIMARY_VAULT_ID;
+        if (onSynced) {
+          set({
+            notes: [],
+            folders: [],
+            activeId: null,
+            openTabIds: [],
+            dirtyNoteIds: [],
+            pendingDeletes: [],
+            pendingDeleteAt: {},
+            dirtyFolders: false,
+            foldersUpdatedAt: 0,
+            vaultOwnerId: adopted.vaultOwnerId,
+            lastVaultOwnerId: adopted.lastVaultOwnerId,
+            initialized: true,
+            syncStatus: "syncing",
+          });
+          return;
+        }
         set({
-          notes: [],
-          folders: [],
-          activeId: null,
-          dirtyNoteIds: [],
-          pendingDeletes: [],
-          pendingDeleteAt: {},
-          dirtyFolders: false,
-          foldersUpdatedAt: 0,
+          vaultPayloads: {
+            ...state.vaultPayloads,
+            [PRIMARY_VAULT_ID]: emptyPayload(),
+          },
           vaultOwnerId: adopted.vaultOwnerId,
           lastVaultOwnerId: adopted.lastVaultOwnerId,
           initialized: true,
-          syncStatus: "syncing",
         });
       },
 
@@ -382,6 +521,7 @@ export const useNotesStore = create<NotesState>()(
         set((state) => ({
           notes: sortNotes([note, ...state.notes]),
           activeId: note.id,
+          openTabIds: openTab(state.openTabIds, note.id),
           previewMode: "edit",
           workspace: "notes",
           dirtyNoteIds: withDirty(state.dirtyNoteIds, note.id),
@@ -396,11 +536,15 @@ export const useNotesStore = create<NotesState>()(
           const existing = state.notes.find((note) => note.id === id);
           const deletedAt = revisionAfter(existing?.updatedAt ?? 0);
           const remaining = state.notes.filter((note) => note.id !== id);
+          const tabs = closeTab(state.openTabIds, id, state.activeId);
           const nextActive =
-            state.activeId === id ? (remaining[0]?.id ?? null) : state.activeId;
+            tabs.activeId && remaining.some((note) => note.id === tabs.activeId)
+              ? tabs.activeId
+              : (remaining[0]?.id ?? null);
           return {
             notes: sortNotes(remaining),
             activeId: nextActive,
+            openTabIds: nextActive ? openTab(tabs.ids, nextActive) : tabs.ids,
             dirtyNoteIds: withoutId(state.dirtyNoteIds, id),
             pendingDeletes: withDirty(state.pendingDeletes, id),
             pendingDeleteAt: { ...state.pendingDeleteAt, [id]: deletedAt },
@@ -447,7 +591,22 @@ export const useNotesStore = create<NotesState>()(
         }));
       },
 
-      selectNote: (id) => set({ activeId: id, workspace: "notes" }),
+      selectNote: (id) =>
+        set((state) => ({
+          activeId: id,
+          workspace: "notes",
+          openTabIds: openTab(state.openTabIds, id),
+        })),
+
+      closeNoteTab: (id) =>
+        set((state) => {
+          const next = closeTab(state.openTabIds, id, state.activeId);
+          return {
+            openTabIds: next.ids,
+            activeId: next.activeId,
+            workspace: "notes",
+          };
+        }),
 
       setFilter: (filter) => set({ filter, workspace: "notes" }),
 
@@ -475,7 +634,7 @@ export const useNotesStore = create<NotesState>()(
             ? fallback
             : (current + direction + sequence.length) % sequence.length;
         const nextId = sequence[nextIndex];
-        if (nextId) set({ activeId: nextId, workspace: "notes" });
+        if (nextId) set((state) => ({ activeId: nextId, workspace: "notes", openTabIds: openTab(state.openTabIds, nextId) }));
       },
 
       createFolder: (name) => {
@@ -520,12 +679,13 @@ export const useNotesStore = create<NotesState>()(
           (note) => note.title.trim().toLowerCase() === title.toLowerCase(),
         );
         if (existing) {
-          set({
+          set((state) => ({
             activeId: existing.id,
             filter: { type: "daily" },
             previewMode: "edit",
             workspace: "notes",
-          });
+            openTabIds: openTab(state.openTabIds, existing.id),
+          }));
           return existing.id;
         }
         const id = get().createNote({
@@ -539,7 +699,11 @@ export const useNotesStore = create<NotesState>()(
       openWiki: (title) => {
         const existing = findNoteByTitle(get().notes, title);
         if (existing) {
-          set({ activeId: existing.id, workspace: "notes" });
+          set((state) => ({
+            activeId: existing.id,
+            workspace: "notes",
+            openTabIds: openTab(state.openTabIds, existing.id),
+          }));
           return existing.id;
         }
         return get().createNote({
@@ -549,6 +713,8 @@ export const useNotesStore = create<NotesState>()(
       },
 
       toggleGraph: () => set((state) => ({ graphOpen: !state.graphOpen })),
+
+      setGraphOpen: (open) => set({ graphOpen: open }),
 
       setWorkspace: (view) => set({ workspace: view }),
 
@@ -569,6 +735,83 @@ export const useNotesStore = create<NotesState>()(
         set((state) => ({
           graphStyle: normalizeGraphStyle({ ...state.graphStyle, ...patch }),
         })),
+
+      createVault: (name) => {
+        const trimmed = name.trim() || "Untitled vault";
+        const id = newId();
+        const state = get();
+        const parked = {
+          ...state.vaultPayloads,
+          [state.activeVaultId]: capturePayload(state),
+        };
+        const empty = emptyPayload();
+        set({
+          vaults: [
+            ...state.vaults,
+            { id, name: trimmed, createdAt: Date.now(), kind: "local" },
+          ],
+          vaultPayloads: parked,
+          activeVaultId: id,
+          notes: empty.notes,
+          folders: empty.folders,
+          activeId: null,
+          openTabIds: [],
+          filter: empty.filter,
+          dirtyNoteIds: [],
+          pendingDeletes: [],
+          pendingDeleteAt: {},
+          dirtyFolders: empty.dirtyFolders,
+          foldersUpdatedAt: empty.foldersUpdatedAt,
+          syncStatus: "local",
+          workspace: "notes",
+        });
+        return id;
+      },
+
+      switchVault: (id) => {
+        const state = get();
+        if (id === state.activeVaultId) return;
+        const target = state.vaults.find((vault) => vault.id === id);
+        if (!target) return;
+        const incoming = state.vaultPayloads[id] ?? emptyPayload();
+        const parked: Record<string, VaultPayload> = {
+          ...state.vaultPayloads,
+          [state.activeVaultId]: capturePayload(state),
+        };
+        delete parked[id];
+        const notes = sortNotes(incoming.notes.map((note) => normalizeNote(note)));
+        const noteIds = new Set(notes.map((note) => note.id));
+        const activeId =
+          incoming.activeId && noteIds.has(incoming.activeId)
+            ? incoming.activeId
+            : (notes[0]?.id ?? null);
+        set({
+          vaults: state.vaults,
+          vaultPayloads: parked,
+          activeVaultId: id,
+          notes,
+          folders: incoming.folders.length > 0 ? incoming.folders : DEFAULT_FOLDERS,
+          activeId,
+          openTabIds: pruneTabs(incoming.openTabIds ?? [], noteIds, activeId),
+          filter: incoming.filter ?? { type: "all" },
+          dirtyNoteIds: incoming.dirtyNoteIds ?? [],
+          pendingDeletes: incoming.pendingDeletes ?? [],
+          pendingDeleteAt: incoming.pendingDeleteAt ?? {},
+          dirtyFolders: incoming.dirtyFolders,
+          foldersUpdatedAt: incoming.foldersUpdatedAt,
+          syncStatus: target.kind === "synced" ? (state.vaultOwnerId ? "syncing" : "local") : "local",
+          workspace: "notes",
+        });
+      },
+
+      renameVault: (id, name) => {
+        const trimmed = name.trim() || "Untitled vault";
+        set((state) => ({
+          vaults: state.vaults.map((vault) =>
+            vault.id === id ? { ...vault, name: trimmed } : vault,
+          ),
+        }));
+      },
     }),
     {
       name: STORAGE_KEY,
@@ -589,8 +832,13 @@ export const useNotesStore = create<NotesState>()(
         pendingDeleteAt: state.pendingDeleteAt,
         dirtyFolders: state.dirtyFolders,
         foldersUpdatedAt: state.foldersUpdatedAt,
-        vaultOwnerId: state.vaultOwnerId,
         lastVaultOwnerId: state.lastVaultOwnerId,
+        vaultOwnerId: state.vaultOwnerId,
+        openTabIds: state.openTabIds,
+        graphOpen: state.graphOpen,
+        vaults: state.vaults,
+        activeVaultId: state.activeVaultId,
+        vaultPayloads: state.vaultPayloads,
       }),
     },
   ),
@@ -598,6 +846,12 @@ export const useNotesStore = create<NotesState>()(
 
 export function useActiveNote(): Note | undefined {
   return useNotesStore((state) => state.notes.find((note) => note.id === state.activeId));
+}
+
+export function useActiveVault(): VaultRecord {
+  return useNotesStore((state) => {
+    return state.vaults.find((vault) => vault.id === state.activeVaultId) ?? state.vaults[0] ?? defaultVaults()[0]!;
+  });
 }
 
 export function useFolderName(folderId: string | null): string {
@@ -674,6 +928,11 @@ function ingestOtherTab(raw: string) {
       dirtyFolders: reconciled.dirtyFolders,
       foldersUpdatedAt: reconciled.foldersUpdatedAt,
       activeId: reconciled.activeId,
+      openTabIds: pruneTabs(
+        current.openTabIds,
+        new Set(reconciled.notes.map((note) => note.id)),
+        reconciled.activeId,
+      ),
     });
   } catch {
     /* ignore malformed persist from another tab */

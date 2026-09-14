@@ -1,14 +1,16 @@
-import { Menu, Plus, Search } from "lucide-react";
+import { Menu, PanelLeftOpen, Plus, Search } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Group, Panel, Separator } from "react-resizable-panels";
+import { Group, Panel, Separator, useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { CommandPalette } from "@/components/notes/command-palette";
 import { VaultSyncHost } from "@/components/notes/account-sync";
 import { DeleteDialog } from "@/components/notes/delete-dialog";
 import { EditorPane } from "@/components/notes/editor-pane";
+import { ExportDialog } from "@/components/notes/export-dialog";
 import { LibraryFooter, LibraryRail } from "@/components/notes/library-rail";
 import { NoteList } from "@/components/notes/note-list";
 import { NewNoteDialog } from "@/components/notes/new-note-dialog";
 import { ShortcutsDialog } from "@/components/notes/shortcuts-dialog";
+import { VaultDialog } from "@/components/notes/vault-dialog";
 import { VaultGraph } from "@/components/notes/vault-graph";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -96,6 +98,8 @@ export function AppShell() {
         <NewNoteDialog />
         <ShortcutsDialog />
         <CommandPalette />
+        <ExportDialog />
+        <VaultDialog />
       </NotesUiProvider>
     </TooltipProvider>
   );
@@ -103,29 +107,88 @@ export function AppShell() {
 
 function DesktopLayout() {
   const workspace = useNotesStore((state) => state.workspace);
+  const libraryRef = usePanelRef();
+  const listRef = usePanelRef();
+  const [libraryCollapsed, setLibraryCollapsed] = useState(false);
+  const [listCollapsed, setListCollapsed] = useState(false);
+  const layoutId = workspace === "graph" ? "vellum-desktop-graph" : "vellum-desktop-notes";
+  const { defaultLayout, onLayoutChanged } = useDefaultLayout({
+    id: layoutId,
+    storage: sessionStorage,
+  });
+
   return (
     <div className="app-frame overflow-hidden">
-      <Group orientation="horizontal" className="h-full">
-        <Panel defaultSize={200} minSize={168} maxSize={280} className="min-h-0">
-          <LibraryRail />
+      <Group
+        orientation="horizontal"
+        className="h-full"
+        defaultLayout={defaultLayout}
+        onLayoutChanged={onLayoutChanged}
+      >
+        <Panel
+          id="library"
+          panelRef={libraryRef}
+          defaultSize={220}
+          minSize={200}
+          maxSize={300}
+          collapsible
+          collapsedSize={48}
+          className="min-h-0"
+          onResize={(size) => setLibraryCollapsed(size.inPixels < 80)}
+        >
+          {libraryCollapsed ? (
+            <CollapsedStrip
+              label="Open library"
+              onExpand={() => libraryRef.current?.expand()}
+            />
+          ) : (
+            <LibraryRail onCollapse={() => libraryRef.current?.collapse()} />
+          )}
         </Panel>
         <Separator className="w-1 bg-border hover:bg-subtle/40" />
         {workspace === "graph" ? (
-          <Panel minSize={360} className="min-h-0">
+          <Panel id="graph" minSize={360} className="min-h-0">
             <VaultGraph />
           </Panel>
         ) : (
           <>
-            <Panel defaultSize={280} minSize={220} maxSize={480} className="min-h-0">
-              <NoteList />
+            <Panel
+              id="notes"
+              panelRef={listRef}
+              defaultSize={320}
+              minSize={280}
+              maxSize={520}
+              collapsible
+              collapsedSize={48}
+              className="min-h-0"
+              onResize={(size) => setListCollapsed(size.inPixels < 80)}
+            >
+              {listCollapsed ? (
+                <CollapsedStrip
+                  label="Open note list"
+                  onExpand={() => listRef.current?.expand()}
+                />
+              ) : (
+                <NoteList onCollapse={() => listRef.current?.collapse()} />
+              )}
             </Panel>
             <Separator className="w-1 bg-border hover:bg-subtle/40" />
-            <Panel minSize={360} className="min-h-0">
+            <Panel id="editor" minSize={360} className="min-h-0">
               <EditorPane />
             </Panel>
           </>
         )}
       </Group>
+    </div>
+  );
+}
+
+function CollapsedStrip({ label, onExpand }: { label: string; onExpand: () => void }) {
+  return (
+    <div className="flex h-full flex-col items-center border-r border-border bg-bg pt-3">
+      <Button variant="quiet" size="icon" onClick={onExpand} aria-label={label}>
+        <PanelLeftOpen />
+      </Button>
     </div>
   );
 }
@@ -136,21 +199,9 @@ function TabletLayout() {
 
   return (
     <div className="app-frame flex overflow-hidden">
-      {workspace === "graph" ? (
-        <div className="min-h-0 min-w-0 flex-1">
-          <VaultGraph />
-        </div>
-      ) : (
-        <Group orientation="horizontal" className="h-full min-w-0 flex-1">
-          <Panel defaultSize={280} minSize={220} maxSize={360} className="min-h-0">
-            <NoteList />
-          </Panel>
-          <Separator className="w-1 bg-border hover:bg-subtle/40" />
-          <Panel minSize={320} className="min-h-0">
-            <EditorPane />
-          </Panel>
-        </Group>
-      )}
+      <div className="min-h-0 min-w-0 flex-1">
+        {workspace === "graph" ? <VaultGraph /> : <EditorPane />}
+      </div>
       {sidebarOpen ? <LibraryDrawer open onClose={() => setSidebarOpen(false)} wide /> : null}
     </div>
   );
@@ -224,7 +275,7 @@ function LibraryDrawer({
         className="absolute inset-y-0 left-0 flex w-full border-r border-border bg-bg shadow-border transition-transform duration-fast ease-smooth will-change-transform"
         style={{
           transform: open ? "translateX(0)" : "translateX(-110%)",
-          maxWidth: wide ? "28rem" : undefined,
+          maxWidth: wide ? "36rem" : undefined,
         }}
       >
         {wide ? (

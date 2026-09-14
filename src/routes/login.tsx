@@ -15,7 +15,7 @@ function Login() {
   useEffect(() => {
     void getAuthStatus()
       .then((status) => setGoogleConfigured(status.googleConfigured))
-      .catch(() => setGoogleConfigured(false));
+      .catch(() => setGoogleConfigured(authEnabled));
   }, []);
 
   const waiting = isPending || googleConfigured === null;
@@ -26,8 +26,9 @@ function Login() {
         <div className="space-y-2">
           <p className="font-serif text-3xl font-medium tracking-tight">Vellum</p>
           <p className="text-sm leading-relaxed text-muted">
-            Sign in with Google to keep the same notes on your phone and computer.
-            Folders, drawings, and links live in your Turso database — not in Drive.
+            {googleConfigured === false
+              ? "Vellum still works without Google. Notes stay on this device until OAuth is configured."
+              : "Sign in with Google to keep the same notes on your phone and computer. Folders, drawings, and links live in your Turso database — not in Drive."}
           </p>
         </div>
 
@@ -60,12 +61,19 @@ function Login() {
                   ))}
                 </div>
               ) : authEnabled ? (
-                <p className="text-sm leading-relaxed text-muted">
-                  Google sign-in is not configured on this server. Set{" "}
-                  <code className="text-xs">GOOGLE_CLIENT_ID</code> and{" "}
-                  <code className="text-xs">GOOGLE_CLIENT_SECRET</code> (see{" "}
-                  <code className="text-xs">.env.example</code>), then restart.
-                </p>
+                <div className="space-y-3 rounded-md border border-border bg-surface px-4 py-3">
+                  <p className="text-sm font-medium text-fg">Google sign-in isn’t set up here</p>
+                  <p className="text-sm leading-relaxed text-muted">
+                    Vellum is working. This local run has no Google OAuth credentials, so
+                    notes stay on this device. That is expected for development — not a
+                    broken app.
+                  </p>
+                  <p className="text-xs leading-relaxed text-subtle">
+                    Production (Vercel) uses <code className="text-[0.7rem]">GOOGLE_CLIENT_ID</code> and{" "}
+                    <code className="text-[0.7rem]">GOOGLE_CLIENT_SECRET</code>. See{" "}
+                    <code className="text-[0.7rem]">.env.example</code>. Never put those values in source.
+                  </p>
+                </div>
               ) : (
                 <p className="text-sm text-muted">Sign-in is disabled.</p>
               )}
@@ -74,9 +82,10 @@ function Login() {
         )}
 
         <p className="text-xs leading-relaxed text-subtle">
-          Without an account, notes stay on this device only. Sign-in uses your
-          own Google Cloud OAuth client. Redirect:{" "}
-          <code className="text-[0.7rem]">/api/auth/callback/google</code>
+          {googleConfigured === false
+            ? "Without Google OAuth, Vellum is not broken — notes simply remain in this browser."
+            : "Without an account, notes stay on this device only. Sign-in uses your own Google Cloud OAuth client."}{" "}
+          Redirect: <code className="text-[0.7rem]">/api/auth/callback/google</code>
         </p>
       </div>
     </main>
