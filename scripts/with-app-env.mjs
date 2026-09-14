@@ -28,6 +28,7 @@ import { fileURLToPath } from "node:url";
 export const APP_ENV_REL_PATH = ".grok/app-env.json";
 
 const VITE_PREFIX = "VITE_";
+const PATH_NAME = "PATH";
 
 /**
  * Parse an app-env document, keeping only `VITE_`-prefixed string entries.
@@ -63,6 +64,61 @@ export function readAppEnv(root) {
 /** File values under the process environment: an explicit override wins. */
 export function mergeAppEnv(appEnv, processEnv) {
   return { ...appEnv, ...processEnv };
+}
+
+/** `node_modules/.bin` for a project root — npm shims live here. */
+export function localBinDir(root) {
+  return join(root, "node_modules", ".bin");
+}
+
+/**
+ * The env key that holds PATH.
+ *
+ * Windows is case-insensitive (`Path` vs `PATH`). CreateProcess uses whichever
+ * name was already in the block; setting a second casing leaves the original
+ * lookup path in place and the local bin never gets searched.
+ */
+export function pathVariableName(env, platform = process.platform) {
+  if (platform !== "win32") return PATH_NAME;
+  return Object.keys(env).find((key) => key.toUpperCase() === PATH_NAME) ?? PATH_NAME;
+}
+
+/**
+ * Put this project's `node_modules/.bin` at the front of PATH so a bare
+ * command like `vite` resolves to the local shim, not a global install.
+ *
+ * Idempotent: does not prepend twice. On Windows, collapses duplicate PATH
+ * casings down to a single key so the child cannot ignore the update.
+ */
+export function withLocalBinOnPath(env, binDir, platform = process.platform) {
+  const delim = platform === "win32" ? ";" : ":";
+  const key = pathVariableName(env, platform);
+  const current = env[key] ?? "";
+  if (current === binDir || current.startsWith(`${binDir}${delim}`)) return env;
+  const next = { ...env };
+  if (platform === "win32") {
+    for (const name of Object.keys(next)) {
+      if (name.toUpperCase() === PATH_NAME) delete next[name];
+    }
+  }
+  next[key] = current ? `${binDir}${delim}${current}` : binDir;
+  return next;
+}
+
+/**
+ * `spawn` options for the wrapped command.
+ *
+ * On Windows a bare `vite` is `vite.cmd` in `node_modules/.bin`. `CreateProcess`
+ * does not run `.cmd` / `.bat` shims; `cmd.exe` does, via PATHEXT. Unix keeps
+ * `shell: false` so the child is vite itself (signal forwarding stays exact).
+ */
+export function childSpawnOptions(env, platform = process.platform) {
+  return {
+    stdio: "inherit",
+    env,
+    shell: platform === "win32",
+    windowsHide: true,
+  };
 }
 
 /**
@@ -110,8 +166,12 @@ function main(argv) {
     console.error("usage: node scripts/with-app-env.mjs <command> [args…]");
     process.exit(2);
   }
-  const env = mergeAppEnv(readAppEnv(projectRoot()), process.env);
-  const child = spawn(command, args, { stdio: "inherit", env });
+  const root = projectRoot();
+  const env = withLocalBinOnPath(
+    mergeAppEnv(readAppEnv(root), process.env),
+    localBinDir(root),
+  );
+  const child = spawn(command, args, childSpawnOptions(env));
   // The dev server is long-running and is stopped by signalling this wrapper.
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     process.on(signal, () => child.kill(signal));

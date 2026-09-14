@@ -7,10 +7,14 @@ import { test } from "node:test";
 import { promisify } from "node:util";
 import {
   APP_ENV_REL_PATH,
+  childSpawnOptions,
+  localBinDir,
   mergeAppEnv,
   parseAppEnv,
+  pathVariableName,
   projectRoot,
   readAppEnv,
+  withLocalBinOnPath,
 } from "./with-app-env.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -125,4 +129,72 @@ test("the CLI still runs when invoked through a symlinked path", async () => {
     PRINT_FLAG,
   ]);
   assert.equal(stdout, "true");
+});
+
+test("localBinDir is <root>/node_modules/.bin", () => {
+  assert.equal(localBinDir("/proj"), join("/proj", "node_modules", ".bin"));
+});
+
+test("Unix PATH key is always PATH", () => {
+  assert.equal(pathVariableName({ Path: "C:\\Windows", PATH: "/usr/bin" }, "linux"), "PATH");
+});
+
+test("Windows keeps the existing Path casing", () => {
+  assert.equal(pathVariableName({ Path: "C:\\Windows" }, "win32"), "Path");
+  assert.equal(pathVariableName({ PATH: "C:\\Windows" }, "win32"), "PATH");
+  assert.equal(pathVariableName({}, "win32"), "PATH");
+});
+
+test("prepends node_modules/.bin on Unix without touching other env", () => {
+  const env = withLocalBinOnPath(
+    { PATH: "/usr/bin", VITE_AUTH_ENABLED: "true" },
+    "/proj/node_modules/.bin",
+    "linux",
+  );
+  assert.equal(env.PATH, "/proj/node_modules/.bin:/usr/bin");
+  assert.equal(env.VITE_AUTH_ENABLED, "true");
+});
+
+test("does not prepend node_modules/.bin twice", () => {
+  const once = withLocalBinOnPath({ PATH: "/usr/bin" }, "/proj/node_modules/.bin", "linux");
+  const twice = withLocalBinOnPath(once, "/proj/node_modules/.bin", "linux");
+  assert.equal(twice.PATH, "/proj/node_modules/.bin:/usr/bin");
+  assert.equal(twice, once);
+});
+
+test("Windows command resolution prepends .bin using ';' and the Path key", () => {
+  // npm installs `vite.cmd` (not `vite.exe`) in node_modules/.bin. The child
+  // only finds it if that directory is on Path; cmd.exe then uses PATHEXT.
+  const env = withLocalBinOnPath(
+    { Path: "C:\\Windows\\system32", VITE_AUTH_ENABLED: "true" },
+    "C:\\proj\\node_modules\\.bin",
+    "win32",
+  );
+  assert.equal(env.Path, "C:\\proj\\node_modules\\.bin;C:\\Windows\\system32");
+  assert.equal(env.PATH, undefined);
+  assert.equal(env.VITE_AUTH_ENABLED, "true");
+});
+
+test("Windows Path update drops a duplicate PATH casing so CreateProcess cannot ignore it", () => {
+  const env = withLocalBinOnPath(
+    { Path: "C:\\Windows", PATH: "C:\\Windows" },
+    "C:\\proj\\node_modules\\.bin",
+    "win32",
+  );
+  const pathKeys = Object.keys(env).filter((key) => key.toUpperCase() === "PATH");
+  assert.equal(pathKeys.length, 1);
+  assert.equal(env[pathKeys[0]], "C:\\proj\\node_modules\\.bin;C:\\Windows");
+});
+
+test("Windows spawn uses a shell so PATHEXT can resolve vite.cmd", () => {
+  const opts = childSpawnOptions({ Path: "C:\\proj\\node_modules\\.bin" }, "win32");
+  assert.equal(opts.shell, true);
+  assert.equal(opts.windowsHide, true);
+  assert.equal(opts.stdio, "inherit");
+});
+
+test("Unix spawn does not use a shell", () => {
+  const opts = childSpawnOptions({ PATH: "/usr/bin" }, "linux");
+  assert.equal(opts.shell, false);
+  assert.equal(opts.stdio, "inherit");
 });
