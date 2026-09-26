@@ -302,7 +302,6 @@ function LibraryDrawer({
 }
 
 function KeyboardBindings() {
-  const cyclePreviewMode = useNotesStore((state) => state.cyclePreviewMode);
   const selectAdjacent = useNotesStore((state) => state.selectAdjacent);
   const openDailyNote = useNotesStore((state) => state.openDailyNote);
   const togglePin = useNotesStore((state) => state.togglePin);
@@ -432,12 +431,6 @@ function KeyboardBindings() {
         return;
       }
 
-      if (meta && key.toLowerCase() === "e") {
-        event.preventDefault();
-        cyclePreviewMode(isDesktop);
-        return;
-      }
-
       if (meta && key === "/") {
         event.preventDefault();
         setHelpOpen(true);
@@ -511,7 +504,6 @@ function KeyboardBindings() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
     activeId,
-    cyclePreviewMode,
     deleteOpen,
     editorRef,
     findOpen,

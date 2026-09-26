@@ -3,7 +3,6 @@ import {
   CalendarDays,
   Cloud,
   Download,
-  Eye,
   FilePlus,
   Folder,
   FolderPlus,
@@ -32,14 +31,13 @@ export function CommandPalette() {
   const setFilter = useNotesStore((state) => state.setFilter);
   const openDailyNote = useNotesStore((state) => state.openDailyNote);
   const togglePin = useNotesStore((state) => state.togglePin);
-  const cyclePreviewMode = useNotesStore((state) => state.cyclePreviewMode);
   const toggleGraph = useNotesStore((state) => state.toggleGraph);
   const setWorkspace = useNotesStore((state) => state.setWorkspace);
   const toggleTheme = useNotesStore((state) => state.toggleTheme);
   const theme = useNotesStore((state) => state.theme);
   const setListMode = useNotesStore((state) => state.setListMode);
   const activeId = useNotesStore((state) => state.activeId);
-  const { paletteOpen, setPaletteOpen, titleRef, isDesktop, setSidebarOpen, setFindOpen, setReplaceOpen, setExportOpen } =
+  const { paletteOpen, setPaletteOpen, titleRef, setSidebarOpen, setFindOpen, setReplaceOpen, setExportOpen } =
     useNotesUi();
   const tags = allTags(notes);
 
@@ -229,17 +227,6 @@ export function CommandPalette() {
           >
             <Pin className="size-4 text-subtle" />
             Pin or unpin
-          </Command.Item>
-          <Command.Item
-            value="toggle preview"
-            className="cmdk-item"
-            onSelect={() => {
-              cyclePreviewMode(isDesktop);
-              close();
-            }}
-          >
-            <Eye className="size-4 text-subtle" />
-            Cycle preview
           </Command.Item>
           <Command.Item
             value="local graph"

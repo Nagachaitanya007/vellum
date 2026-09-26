@@ -379,6 +379,201 @@ export function pruneTabs(ids: string[], noteIds: Set<string>, activeId: string 
   return kept;
 }
 
+type ListLine = {
+  indent: string;
+  marker: string;
+  task: string | null;
+  rest: string;
+  prefixLength: number;
+};
+
+function parseListLine(line: string): ListLine | null {
+  const match = /^(\s*)([-*+]|\d+[.)])\s+(?:(\[[ xX]\])\s*)?(.*)$/.exec(line);
+  if (!match) return null;
+  const indent = match[1] ?? "";
+  const marker = match[2] ?? "";
+  const task = match[3] ?? null;
+  const rest = match[4] ?? "";
+  return {
+    indent,
+    marker,
+    task,
+    rest,
+    prefixLength: line.length - rest.length,
+  };
+}
+
+function nextListMarker(marker: string): string {
+  const numbered = /^(\d+)([.)])$/.exec(marker);
+  if (!numbered) return marker;
+  return `${Number(numbered[1]) + 1}${numbered[2]}`;
+}
+
+function listPrefix(indent: string, marker: string, task: string | null): string {
+  return task ? `${indent}${marker} [ ] ` : `${indent}${marker} `;
+}
+
+/** Continue a bullet, number, or to-do on Enter. Empty item exits or outdents. */
+export function continueList(
+  value: string,
+  cursor: number,
+): { value: string; cursor: number } | null {
+  if (isInsideFencedCode(value, cursor)) return null;
+  const lineStart = value.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1;
+  const newline = value.indexOf("\n", lineStart);
+  const lineEnd = newline === -1 ? value.length : newline;
+  if (cursor < lineStart || cursor > lineEnd) return null;
+  const parsed = parseListLine(value.slice(lineStart, lineEnd));
+  if (!parsed) return null;
+  if (cursor < lineStart + parsed.prefixLength) return null;
+
+  if (parsed.rest.length === 0) {
+    if (parsed.indent.length >= 2) {
+      const kept = listPrefix(parsed.indent.slice(2), parsed.marker, parsed.task);
+      return {
+        value: value.slice(0, lineStart) + kept + value.slice(lineEnd),
+        cursor: lineStart + kept.length,
+      };
+    }
+    return {
+      value: value.slice(0, lineStart) + value.slice(lineEnd),
+      cursor: lineStart,
+    };
+  }
+
+  const prefix = listPrefix(parsed.indent, nextListMarker(parsed.marker), parsed.task);
+  const insert = `\n${prefix}`;
+  return {
+    value: value.slice(0, cursor) + insert + value.slice(cursor),
+    cursor: cursor + insert.length,
+  };
+}
+
+/** Turn the current line into a bullet or to-do, or remove that marker. */
+export function applyLineMarker(
+  value: string,
+  cursor: number,
+  kind: "bullet" | "todo",
+): { value: string; cursor: number } {
+  const marker = kind === "todo" ? "- [ ] " : "- ";
+  const lineStart = value.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1;
+  const newline = value.indexOf("\n", lineStart);
+  const lineEnd = newline === -1 ? value.length : newline;
+  const line = value.slice(lineStart, lineEnd);
+  const parsed = parseListLine(line);
+  let nextLine: string;
+  if (parsed) {
+    const same =
+      (kind === "todo" && parsed.task !== null) ||
+      (kind === "bullet" && parsed.task === null && parsed.marker === "-");
+    nextLine = same
+      ? `${parsed.indent}${parsed.rest}`
+      : `${parsed.indent}${marker}${parsed.rest}`;
+  } else {
+    const indent = /^(\s*)/.exec(line)?.[1] ?? "";
+    nextLine = `${indent}${marker}${line.slice(indent.length)}`;
+  }
+  return {
+    value: value.slice(0, lineStart) + nextLine + value.slice(lineEnd),
+    cursor: lineStart + nextLine.length,
+  };
+}
+
+export type VisualLine = {
+  kind: "text" | "bullet" | "todo" | "number";
+  indent: string;
+  marker: string;
+  checked: boolean;
+  text: string;
+  raw: string;
+};
+
+function textVisualLine(raw: string): VisualLine {
+  return { kind: "text", indent: "", marker: "", checked: false, text: raw, raw };
+}
+
+/** Split a note into lines. List markers stay in `raw`; `text` is what the user sees. */
+export function splitVisualLines(value: string): VisualLine[] {
+  let fence = false;
+  return value.split("\n").map((raw) => {
+    const fenceLine = /^ {0,3}```/.test(raw);
+    if (fence || fenceLine) {
+      if (fenceLine) fence = !fence;
+      return textVisualLine(raw);
+    }
+    const parsed = parseListLine(raw);
+    if (!parsed) return textVisualLine(raw);
+    if (parsed.task) {
+      return {
+        kind: "todo",
+        indent: parsed.indent,
+        marker: parsed.marker,
+        checked: /x/i.test(parsed.task),
+        text: parsed.rest,
+        raw,
+      };
+    }
+    if (/^\d/.test(parsed.marker)) {
+      return {
+        kind: "number",
+        indent: parsed.indent,
+        marker: parsed.marker,
+        checked: false,
+        text: parsed.rest,
+        raw,
+      };
+    }
+    return {
+      kind: "bullet",
+      indent: parsed.indent,
+      marker: parsed.marker,
+      checked: false,
+      text: parsed.rest,
+      raw,
+    };
+  });
+}
+
+export function joinVisualLines(lines: VisualLine[]): string {
+  return lines.map((line) => line.raw).join("\n");
+}
+
+export function withVisualText(line: VisualLine, text: string): VisualLine {
+  if (line.kind === "text") return { ...line, text, raw: text };
+  const prefix = line.raw.slice(0, line.raw.length - line.text.length);
+  return { ...line, text, raw: prefix + text };
+}
+
+export function markdownOffsetFromLines(lines: VisualLine[], line: number, column: number): number {
+  let pos = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i]!.raw;
+    if (i === line) {
+      const textStart = raw.length - lines[i]!.text.length;
+      return pos + textStart + Math.max(0, Math.min(column, lines[i]!.text.length));
+    }
+    pos += raw.length + 1;
+  }
+  return Math.max(0, pos - 1);
+}
+
+export function visualCaret(value: string, offset: number): { line: number; column: number } {
+  const lines = splitVisualLines(value);
+  let pos = 0;
+  const clamped = Math.max(0, Math.min(offset, value.length));
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i]!.raw;
+    const end = pos + raw.length;
+    if (clamped <= end || i === lines.length - 1) {
+      const textStart = pos + (raw.length - lines[i]!.text.length);
+      const column = Math.max(0, Math.min(lines[i]!.text.length, clamped - textStart));
+      return { line: i, column };
+    }
+    pos = end + 1;
+  }
+  return { line: 0, column: 0 };
+}
+
 export function noteMatchesFilter(note: Note, filter: LibraryFilter): boolean {
   switch (filter.type) {
     case "all":

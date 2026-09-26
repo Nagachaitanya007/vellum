@@ -19,7 +19,7 @@ export function NewNoteDialog() {
       <DialogContent>
         <DialogTitle>New</DialogTitle>
         <DialogDescription className="mt-1">
-          A page is markdown. A board is a drawing canvas.
+          A page is for writing notes and linking them. A board is a drawing canvas.
         </DialogDescription>
         <div className="mt-5 grid gap-2">
           <button
@@ -30,7 +30,7 @@ export function NewNoteDialog() {
             <FileText className="size-5 text-muted" />
             <span>
               <span className="block text-sm font-medium text-fg">Markdown page</span>
-              <span className="block text-xs text-muted">Write, preview, diagrams</span>
+              <span className="block text-xs text-muted">Write and link notes</span>
             </span>
           </button>
           <button

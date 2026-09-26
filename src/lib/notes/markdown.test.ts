@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { applySlash, isInsideFencedCode, openSlashQuery, openWikiQuery, splitEmbeds } from "./helpers.ts";
+import { applySlash, continueList, isInsideFencedCode, openSlashQuery, openWikiQuery, splitEmbeds, splitVisualLines, visualCaret, withVisualText } from "./helpers.ts";
 import { renderMarkdown } from "./markdown.ts";
 
 test("fenced javascript blocks keep language, indentation, and line breaks", () => {
@@ -54,4 +54,47 @@ test("embeds inside fenced code are not split out of the markdown chunk", () => 
   assert.equal(chunks.length, 1);
   assert.equal(chunks[0]?.type, "md");
   assert.match(chunks[0]?.value ?? "", /!\[\[Other\]\]/);
+});
+
+test("enter continues a bullet and a to-do", () => {
+  const bullet = continueList("- milk", "- milk".length);
+  assert.equal(bullet?.value, "- milk\n- ");
+  assert.equal(bullet?.cursor, "- milk\n- ".length);
+  const todo = continueList("- [ ] milk", "- [ ] milk".length);
+  assert.equal(todo?.value, "- [ ] milk\n- [ ] ");
+  const numbered = continueList("1. one", "1. one".length);
+  assert.equal(numbered?.value, "1. one\n2. ");
+});
+
+test("enter on an empty list item leaves the list", () => {
+  const exited = continueList("- milk\n- ", "- milk\n- ".length);
+  assert.equal(exited?.value, "- milk\n");
+  assert.equal(exited?.cursor, "- milk\n".length);
+});
+
+test("enter inside a code fence does not continue a list", () => {
+  const value = "```\n- stay\n";
+  assert.equal(continueList(value, value.length), null);
+});
+
+test("list lines show words only, not the dash or checkbox marks", () => {
+  const lines = splitVisualLines("- milk\n- [ ] eggs\n- [x] bread\n1. one");
+  assert.equal(lines[0]?.kind, "bullet");
+  assert.equal(lines[0]?.text, "milk");
+  assert.equal(lines[1]?.kind, "todo");
+  assert.equal(lines[1]?.text, "eggs");
+  assert.equal(lines[1]?.checked, false);
+  assert.equal(lines[2]?.checked, true);
+  assert.equal(lines[3]?.kind, "number");
+  assert.equal(lines[3]?.text, "one");
+  assert.equal(lines.map((line) => line.raw).join("\n"), "- milk\n- [ ] eggs\n- [x] bread\n1. one");
+});
+
+test("editing list text keeps the marker hidden", () => {
+  const [line] = splitVisualLines("- [ ] eggs");
+  assert.ok(line);
+  const next = withVisualText(line, "eggs and toast");
+  assert.equal(next.text, "eggs and toast");
+  assert.equal(next.raw, "- [ ] eggs and toast");
+  assert.equal(visualCaret("- [ ] eggs", "- [ ] ".length).column, 0);
 });

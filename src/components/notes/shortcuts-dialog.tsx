@@ -18,7 +18,6 @@ export function ShortcutsDialog() {
     { keys: `${mod}⇧L`, action: "Light / dark" },
     { keys: `${mod}⇧D`, action: "Today’s daily note" },
     { keys: `${mod}⇧P`, action: "Pin or unpin" },
-    { keys: `${mod}E`, action: "Cycle preview" },
     { keys: `${mod}⇧⌫`, action: "Delete note" },
     { keys: `${alt}↑ / ${alt}↓`, action: "Previous / next note" },
     { keys: "[[", action: "Link to a note" },
