@@ -20,6 +20,7 @@ import { GraphPanel } from "@/components/notes/graph-panel";
 import { MentionsPanel } from "@/components/notes/mentions-panel";
 import { NoteTabs } from "@/components/notes/note-tabs";
 import { VisualNote } from "@/components/notes/visual-note";
+import { VoiceButton } from "@/components/notes/voice-button";
 import { SlashMenu, slashItemsFor } from "@/components/notes/slash-menu";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/tooltip";
@@ -28,6 +29,8 @@ import {
   applySlash,
   displayTitle,
   formatEdited,
+  insertImageLine,
+  insertSpokenText,
   insertWikiLink,
   openSlashQuery,
   openWikiQuery,
@@ -35,8 +38,10 @@ import {
   wrapSelection,
 } from "@/lib/notes/helpers";
 import { exportDrawingImage } from "@/lib/notes/drawing";
+import { compressImageFile } from "@/lib/notes/images";
 import { useActiveNote, useNotesStore } from "@/lib/notes/store";
 import { exportNoteMarkdown } from "@/lib/notes/export";
+import { VAULT_LIMITS } from "@/lib/notes/vault-ops";
 import { cn, modLabel } from "@/lib/utils";
 import { useNotesUi } from "./notes-ui";
 
@@ -69,6 +74,10 @@ export function EditorPane() {
   const [menuPos, setMenuPos] = useState({ top: 0, right: 8 });
 
   useEffect(() => {
+    setNoteHint(null);
+  }, [active?.id]);
+
+  useEffect(() => {
     if (!moreOpen) return;
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") setMoreOpen(false);
@@ -78,6 +87,11 @@ export function EditorPane() {
   }, [moreOpen]);
   const [cursor, setCursor] = useState(0);
   const [focusTick, setFocusTick] = useState(0);
+  const [noteHint, setNoteHint] = useState<string | null>(null);
+  const contentRef = useRef("");
+  const cursorRef = useRef(0);
+  contentRef.current = active?.content ?? "";
+  cursorRef.current = cursor;
 
   const wikiQuery = active ? openWikiQuery(active.content, cursor) : null;
   const slashQuery = active && wikiQuery === null ? openSlashQuery(active.content, cursor) : null;
@@ -134,6 +148,45 @@ export function EditorPane() {
     const next = `${active.content.slice(0, cursor)}[[${active.content.slice(cursor)}`;
     updateNote(active.id, { content: next });
     moveCaret(cursor + 2);
+  }
+
+  function insertSpeech(transcript: string) {
+    if (!active) return;
+    const inserted = insertSpokenText(contentRef.current, cursorRef.current, transcript);
+    if (inserted.value.length > VAULT_LIMITS.maxContentLength) {
+      setNoteHint("This note is full.");
+      return;
+    }
+    contentRef.current = inserted.value;
+    cursorRef.current = inserted.cursor;
+    updateNote(active.id, { content: inserted.value });
+    moveCaret(inserted.cursor);
+  }
+
+  async function pasteImages(files: File[]) {
+    if (!active || files.length === 0) return;
+    setNoteHint("Adding image…");
+    let content = contentRef.current;
+    let caret = cursorRef.current;
+    try {
+      for (const file of files) {
+        const url = await compressImageFile(file);
+        const inserted = insertImageLine(content, caret, url);
+        if (inserted.value.length > VAULT_LIMITS.maxContentLength) {
+          setNoteHint("That image is too large to keep in this note.");
+          return;
+        }
+        content = inserted.value;
+        caret = inserted.cursor;
+        contentRef.current = content;
+        cursorRef.current = caret;
+        updateNote(active.id, { content });
+      }
+      moveCaret(caret);
+      setNoteHint(null);
+    } catch {
+      setNoteHint("Couldn’t add that image. Try a smaller picture.");
+    }
   }
 
   function onTitleKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
@@ -729,7 +782,9 @@ export function EditorPane() {
               >
                 <Link2 /> Link
               </Button>
+              <VoiceButton onText={insertSpeech} onHint={setNoteHint} />
             </div>
+            {noteHint ? <p className="mb-3 text-sm text-paper-muted">{noteHint}</p> : null}
             <p className="mb-4 text-xs text-paper-subtle sm:hidden">
               <span className="tabular-nums">{edited}</span>
               {" · "}
@@ -743,8 +798,9 @@ export function EditorPane() {
               focusTick={focusTick}
               focusAt={cursor}
               editorRef={editorRef}
-              placeholder="Write a note"
+              placeholder="Write a note. Paste an image, or use Voice to dictate."
               onCursor={setCursor}
+              onPasteImages={pasteImages}
               onChange={(next, caret) => {
                 updateNote(active.id, { content: next });
                 setCursor(caret);

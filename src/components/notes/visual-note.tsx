@@ -2,10 +2,12 @@ import { Check } from "lucide-react";
 import {
   useLayoutEffect,
   useRef,
+  type ClipboardEvent as ReactClipboardEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type RefObject,
 } from "react";
 import {
+  imageSource,
   joinVisualLines,
   markdownOffsetFromLines,
   splitVisualLines,
@@ -67,6 +69,7 @@ export function VisualNote({
   onKeyDown,
   editorRef,
   placeholder,
+  onPasteImages,
 }: {
   value: string;
   focusTick: number;
@@ -80,6 +83,7 @@ export function VisualNote({
   ) => boolean;
   editorRef: RefObject<HTMLTextAreaElement | null>;
   placeholder: string;
+  onPasteImages: (files: File[]) => void;
 }) {
   const lines = splitVisualLines(value);
   const rows = useRef<Array<HTMLTextAreaElement | null>>([]);
@@ -131,11 +135,11 @@ export function VisualNote({
   function onEnter(index: number, caret: number) {
     const line = lines[index];
     if (!line) return;
-    if (line.kind === "text") {
+    if (line.kind === "text" || line.kind === "image") {
       const next = [
         ...lines.slice(0, index),
-        withVisualText(line, line.text.slice(0, caret)),
-        textLine(line.text.slice(caret)),
+        line.kind === "text" ? withVisualText(line, line.text.slice(0, caret)) : line,
+        textLine(line.kind === "text" ? line.text.slice(caret) : ""),
         ...lines.slice(index + 1),
       ];
       commit(next, index + 1, 0);
@@ -166,6 +170,13 @@ export function VisualNote({
   function onBackspace(index: number) {
     const line = lines[index];
     if (!line) return;
+    if (line.kind === "image") {
+      const next = lines.filter((_, i) => i !== index);
+      const safe = next.length > 0 ? next : [textLine("")];
+      const focus = Math.min(index, safe.length - 1);
+      commit(safe, focus, safe[focus]?.text.length ?? 0);
+      return;
+    }
     if (line.kind !== "text") {
       const next = [...lines.slice(0, index), textLine(line.text), ...lines.slice(index + 1)];
       commit(next, index, 0);
@@ -198,14 +209,49 @@ export function VisualNote({
     commit(next, index, column);
   }
 
+  function pastedFiles(event: ReactClipboardEvent): File[] {
+    const files: File[] = [];
+    for (const item of event.clipboardData?.items ?? []) {
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+    return files;
+  }
+
+  function onPaste(event: ReactClipboardEvent) {
+    const files = pastedFiles(event);
+    if (files.length === 0) return;
+    event.preventDefault();
+    onPasteImages(files);
+  }
+
   return (
-    <div className="flex flex-col pb-16" aria-label="Note body">
+    <div className="flex flex-col pb-16" aria-label="Note body" onPaste={onPaste}>
       {lines.map((line, index) => (
         <div
           key={index}
           className="flex min-h-11 items-start"
           style={{ paddingLeft: `${Math.floor(line.indent.length / 2) * 1.25}rem` }}
         >
+          {line.kind === "image" ? (
+            <figure className="my-2 w-full">
+              <img
+                src={imageSource(line.raw)?.src}
+                alt={line.text || "Pasted image"}
+                className="max-h-80 max-w-full rounded-md border border-paper-line"
+              />
+              <button
+                type="button"
+                className="mt-1 h-11 px-1 text-sm text-paper-muted hover:text-paper-fg"
+                onClick={() => onBackspace(index)}
+              >
+                Remove image
+              </button>
+            </figure>
+          ) : (
+          <>
           {line.kind === "bullet" ? (
             <span className="mt-[1.15rem] mr-3 size-1.5 shrink-0 rounded-full bg-paper-fg" aria-hidden />
           ) : null}
@@ -294,7 +340,10 @@ export function VisualNote({
                 onTab(index, event.shiftKey);
               }
             }}
+            onPaste={onPaste}
           />
+          </>
+          )}
         </div>
       ))}
     </div>

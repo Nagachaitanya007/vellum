@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { applySlash, continueList, isInsideFencedCode, openSlashQuery, openWikiQuery, splitEmbeds, splitVisualLines, visualCaret, withVisualText } from "./helpers.ts";
+import { applySlash, continueList, imageSource, insertImageLine, insertSpokenText, isInsideFencedCode, openSlashQuery, openWikiQuery, splitEmbeds, splitVisualLines, visualCaret, withVisualText } from "./helpers.ts";
 import { renderMarkdown } from "./markdown.ts";
 
 test("fenced javascript blocks keep language, indentation, and line breaks", () => {
@@ -97,4 +97,23 @@ test("editing list text keeps the marker hidden", () => {
   assert.equal(next.text, "eggs and toast");
   assert.equal(next.raw, "- [ ] eggs and toast");
   assert.equal(visualCaret("- [ ] eggs", "- [ ] ".length).column, 0);
+});
+
+test("a pasted image is its own picture line, not a wall of text", () => {
+  const url = "data:image/jpeg;base64,aGVsbG8=";
+  const inserted = insertImageLine("Hello", "Hello".length, url);
+  assert.match(inserted.value, /^Hello\n!\[\]\(data:image\/jpeg;base64,aGVsbG8=\)\n$/);
+  const lines = splitVisualLines(inserted.value);
+  assert.equal(lines[1]?.kind, "image");
+  assert.equal(lines[1]?.text, "");
+  assert.equal(imageSource(lines[1]?.raw ?? "")?.src, url);
+  assert.equal(imageSource("![](javascript:alert(1))"), null);
+});
+
+test("voice typing inserts words at the cursor with a separating space", () => {
+  const first = insertSpokenText("Buy", 3, " milk");
+  assert.equal(first.value, "Buy milk");
+  const next = insertSpokenText(first.value, first.cursor, "  and eggs  ");
+  assert.equal(next.value, "Buy milk and eggs");
+  assert.equal(next.cursor, next.value.length);
 });

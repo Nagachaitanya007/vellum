@@ -10,6 +10,7 @@ export function snippet(content: string, max = 88): string {
   const text = content
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`[^`]*`/g, " ")
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, " ")
     .replace(/!\[\[([^\]|#]+)\]\]/g, "$1")
     .replace(/\[\[([^\]|#]+)(?:\|([^\]]+))?\]\]/g, (_full, title: string, alias?: string) => alias || title)
     .replace(/[#>*_~[\]()!-]/g, " ")
@@ -480,7 +481,7 @@ export function applyLineMarker(
 }
 
 export type VisualLine = {
-  kind: "text" | "bullet" | "todo" | "number";
+  kind: "text" | "bullet" | "todo" | "number" | "image";
   indent: string;
   marker: string;
   checked: boolean;
@@ -492,6 +493,57 @@ function textVisualLine(raw: string): VisualLine {
   return { kind: "text", indent: "", marker: "", checked: false, text: raw, raw };
 }
 
+const DATA_IMAGE = /^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+=*$/;
+
+/** A single-line markdown image the writing page can show. Other lines stay text. */
+export function imageSource(raw: string): { alt: string; src: string } | null {
+  const match = /^!\[([^\]]*)\]\(([^)\s]+)\)$/.exec(raw.trim());
+  if (!match) return null;
+  const alt = match[1] ?? "";
+  const src = match[2] ?? "";
+  if (DATA_IMAGE.test(src)) return { alt, src };
+  if (/^https:\/\/[\w\-./%?&=:+#~]+$/.test(src) && src.length < 2000) return { alt, src };
+  return null;
+}
+
+export function insertImageLine(
+  value: string,
+  cursor: number,
+  dataUrl: string,
+): { value: string; cursor: number } {
+  if (!DATA_IMAGE.test(dataUrl)) throw new Error("unsupported image");
+  const block = `![](${dataUrl})`;
+  const at = Math.max(0, Math.min(cursor, value.length));
+  const lineStart = value.lastIndexOf("\n", Math.max(0, at - 1)) + 1;
+  const newline = value.indexOf("\n", lineStart);
+  const lineEnd = newline === -1 ? value.length : newline;
+  const line = value.slice(lineStart, lineEnd);
+  if (line.trim() === "") {
+    const rest = lineEnd < value.length ? value.slice(lineEnd + 1) : "";
+    const next = `${value.slice(0, lineStart)}${block}\n${rest}`;
+    return { value: next, cursor: lineStart + block.length + 1 };
+  }
+  const rest = lineEnd < value.length ? value.slice(lineEnd + 1) : "";
+  const next = `${value.slice(0, lineEnd)}\n${block}\n${rest}`;
+  return { value: next, cursor: lineEnd + 1 + block.length + 1 };
+}
+
+export function insertSpokenText(
+  value: string,
+  cursor: number,
+  transcript: string,
+): { value: string; cursor: number } {
+  const spoken = transcript.replace(/\s+/g, " ").trim();
+  if (!spoken) return { value, cursor };
+  const at = Math.max(0, Math.min(cursor, value.length));
+  const needsSpace = at > 0 && !/\s$/.test(value.slice(0, at));
+  const chunk = `${needsSpace ? " " : ""}${spoken}`;
+  return {
+    value: value.slice(0, at) + chunk + value.slice(at),
+    cursor: at + chunk.length,
+  };
+}
+
 /** Split a note into lines. List markers stay in `raw`; `text` is what the user sees. */
 export function splitVisualLines(value: string): VisualLine[] {
   let fence = false;
@@ -500,6 +552,10 @@ export function splitVisualLines(value: string): VisualLine[] {
     if (fence || fenceLine) {
       if (fenceLine) fence = !fence;
       return textVisualLine(raw);
+    }
+    const image = imageSource(raw);
+    if (image) {
+      return { kind: "image", indent: "", marker: "", checked: false, text: image.alt, raw };
     }
     const parsed = parseListLine(raw);
     if (!parsed) return textVisualLine(raw);
