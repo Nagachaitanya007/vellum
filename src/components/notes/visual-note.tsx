@@ -21,6 +21,17 @@ function textLine(raw: string): VisualLine {
   return { kind: "text", indent: "", marker: "", checked: false, text: raw, raw };
 }
 
+function quoteLine(text: string): VisualLine {
+  return { kind: "quote", indent: "", marker: ">", checked: false, text, raw: `> ${text}` };
+}
+
+function lineTextClass(line: VisualLine): string {
+  if (line.kind !== "heading") return "text-lg";
+  if (line.marker.length <= 1) return "text-3xl font-medium";
+  if (line.marker.length === 2) return "text-2xl font-medium";
+  return "text-xl font-medium";
+}
+
 function listLine(
   kind: "bullet" | "todo" | "number",
   indent: string,
@@ -135,11 +146,31 @@ export function VisualNote({
   function onEnter(index: number, caret: number) {
     const line = lines[index];
     if (!line) return;
-    if (line.kind === "text" || line.kind === "image") {
+    if (line.kind === "text" || line.kind === "heading" || line.kind === "callout") {
       const next = [
         ...lines.slice(0, index),
-        line.kind === "text" ? withVisualText(line, line.text.slice(0, caret)) : line,
-        textLine(line.kind === "text" ? line.text.slice(caret) : ""),
+        withVisualText(line, line.text.slice(0, caret)),
+        textLine(line.text.slice(caret)),
+        ...lines.slice(index + 1),
+      ];
+      commit(next, index + 1, 0);
+      return;
+    }
+    if (line.kind === "image" || line.kind === "divider") {
+      const next = [...lines.slice(0, index), line, textLine(""), ...lines.slice(index + 1)];
+      commit(next, index + 1, 0);
+      return;
+    }
+    if (line.kind === "quote") {
+      if (line.text.length === 0) {
+        const next = [...lines.slice(0, index), textLine(""), ...lines.slice(index + 1)];
+        commit(next, index, 0);
+        return;
+      }
+      const next = [
+        ...lines.slice(0, index),
+        withVisualText(line, line.text.slice(0, caret)),
+        quoteLine(line.text.slice(caret)),
         ...lines.slice(index + 1),
       ];
       commit(next, index + 1, 0);
@@ -232,10 +263,27 @@ export function VisualNote({
       {lines.map((line, index) => (
         <div
           key={index}
-          className="flex min-h-11 items-start"
-          style={{ paddingLeft: `${Math.floor(line.indent.length / 2) * 1.25}rem` }}
+          className={cn(
+            "flex min-h-11 w-full items-start",
+            line.kind === "callout" && "my-1 rounded-md border border-paper-line bg-paper-hover px-3",
+          )}
+          style={{ paddingLeft: line.kind === "callout" ? undefined : `${Math.floor(line.indent.length / 2) * 1.25}rem` }}
         >
-          {line.kind === "image" ? (
+          {line.kind === "divider" ? (
+            <button
+              type="button"
+              aria-label="Divider"
+              className="my-2 flex h-11 w-full items-center"
+              onKeyDown={(event) => {
+                if (event.key === "Backspace" || event.key === "Delete") {
+                  event.preventDefault();
+                  onBackspace(index);
+                }
+              }}
+            >
+              <span className="block h-px w-full bg-paper-line" />
+            </button>
+          ) : line.kind === "image" ? (
             <figure className="my-2 w-full">
               <img
                 src={imageSource(line.raw)?.src}
@@ -252,6 +300,14 @@ export function VisualNote({
             </figure>
           ) : (
           <>
+          {line.kind === "quote" ? (
+            <span className="mr-3 mt-2 mb-2 w-0.5 shrink-0 self-stretch rounded-full bg-paper-muted" aria-hidden />
+          ) : null}
+          {line.kind === "callout" ? (
+            <span className="mt-3 mr-3 shrink-0 text-xs font-medium uppercase tracking-wide text-paper-muted">
+              {line.marker}
+            </span>
+          ) : null}
           {line.kind === "bullet" ? (
             <span className="mt-[1.15rem] mr-3 size-1.5 shrink-0 rounded-full bg-paper-fg" aria-hidden />
           ) : null}
@@ -296,11 +352,22 @@ export function VisualNote({
             }}
             value={line.text}
             rows={1}
-            placeholder={index === 0 && lines.length === 1 && line.kind === "text" ? placeholder : ""}
-            aria-label={line.kind === "text" ? "Note text" : "List item"}
+            placeholder={
+              line.kind === "heading"
+                ? "Heading"
+                : line.kind === "quote"
+                  ? "Quote"
+                  : line.kind === "callout"
+                    ? "Write a note"
+                    : index === 0 && lines.length === 1 && line.kind === "text"
+                      ? placeholder
+                      : ""
+            }
+            aria-label={line.kind === "heading" ? "Heading" : line.kind === "text" ? "Note text" : "List item"}
             spellCheck
             className={cn(
-              "min-h-11 w-full flex-1 resize-none overflow-hidden bg-transparent py-2 font-serif text-lg leading-writing outline-none",
+              "min-h-11 w-full flex-1 resize-none overflow-hidden bg-transparent py-2 font-serif leading-writing outline-none",
+              lineTextClass(line),
               line.checked ? "text-paper-muted line-through" : "text-paper-fg",
               "placeholder:text-paper-subtle",
             )}

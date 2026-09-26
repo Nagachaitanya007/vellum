@@ -117,3 +117,15 @@ test("voice typing inserts words at the cursor with a separating space", () => {
   assert.equal(next.value, "Buy milk and eggs");
   assert.equal(next.cursor, next.value.length);
 });
+
+test("a heading line hides the hash marks and keeps the title", () => {
+  const [line] = splitVisualLines("## hsjkksbbd");
+  assert.equal(line?.kind, "heading");
+  assert.equal(line?.marker, "##");
+  assert.equal(line?.text, "hsjkksbbd");
+  assert.equal(line?.raw, "## hsjkksbbd");
+  const quote = splitVisualLines("> said this")[0];
+  assert.equal(quote?.kind, "quote");
+  assert.equal(quote?.text, "said this");
+  assert.equal(splitVisualLines("---")[0]?.kind, "divider");
+});

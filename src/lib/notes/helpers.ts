@@ -215,20 +215,20 @@ export type SlashItem = {
 };
 
 export const SLASH_ITEMS: SlashItem[] = [
-  { id: "h1", label: "Heading 1", hint: "#", insert: "# " },
-  { id: "h2", label: "Heading 2", hint: "##", insert: "## " },
-  { id: "h3", label: "Heading 3", hint: "###", insert: "### " },
-  { id: "bullet", label: "Bulleted list", hint: "-", insert: "- " },
-  { id: "number", label: "Numbered list", hint: "1.", insert: "1. " },
-  { id: "todo", label: "To-do", hint: "[]", insert: "- [ ] " },
-  { id: "quote", label: "Quote", hint: ">", insert: "> " },
+  { id: "h1", label: "Heading 1", hint: "Large", insert: "# " },
+  { id: "h2", label: "Heading 2", hint: "Section", insert: "## " },
+  { id: "h3", label: "Heading 3", hint: "Small", insert: "### " },
+  { id: "bullet", label: "Bulleted list", hint: "List", insert: "- " },
+  { id: "number", label: "Numbered list", hint: "1, 2, 3", insert: "1. " },
+  { id: "todo", label: "To-do", hint: "Check", insert: "- [ ] " },
+  { id: "quote", label: "Quote", hint: "Quote", insert: "> " },
   {
     id: "callout",
     label: "Callout",
-    hint: "note",
+    hint: "Note",
     insert: "> [!note]\n> ",
   },
-  { id: "divider", label: "Divider", hint: "---", insert: "---\n\n" },
+  { id: "divider", label: "Divider", hint: "Line", insert: "---\n\n" },
   { id: "code", label: "Code block", hint: "```", insert: "```js\n\n```\n" },
   {
     id: "table",
@@ -481,7 +481,7 @@ export function applyLineMarker(
 }
 
 export type VisualLine = {
-  kind: "text" | "bullet" | "todo" | "number" | "image";
+  kind: "text" | "bullet" | "todo" | "number" | "image" | "heading" | "quote" | "callout" | "divider";
   indent: string;
   marker: string;
   checked: boolean;
@@ -556,6 +556,35 @@ export function splitVisualLines(value: string): VisualLine[] {
     const image = imageSource(raw);
     if (image) {
       return { kind: "image", indent: "", marker: "", checked: false, text: image.alt, raw };
+    }
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(raw.trim())) {
+      return { kind: "divider", indent: "", marker: "", checked: false, text: "", raw };
+    }
+    const heading = /^(#{1,6})[ \t]+(.*)$/.exec(raw);
+    if (heading) {
+      return {
+        kind: "heading",
+        indent: "",
+        marker: heading[1] ?? "#",
+        checked: false,
+        text: heading[2] ?? "",
+        raw,
+      };
+    }
+    const callout = /^>\s*\[!(note|tip|warn)\][ \t]*(.*)$/i.exec(raw);
+    if (callout) {
+      return {
+        kind: "callout",
+        indent: "",
+        marker: (callout[1] ?? "note").toLowerCase(),
+        checked: false,
+        text: callout[2] ?? "",
+        raw,
+      };
+    }
+    const quote = /^>[ \t]?(.*)$/.exec(raw);
+    if (quote) {
+      return { kind: "quote", indent: "", marker: ">", checked: false, text: quote[1] ?? "", raw };
     }
     const parsed = parseListLine(raw);
     if (!parsed) return textVisualLine(raw);
