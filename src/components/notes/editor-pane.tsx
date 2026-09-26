@@ -196,11 +196,7 @@ export function EditorPane() {
     }
   }
 
-  function onEditorKeyDown(
-    event: ReactKeyboardEvent<HTMLTextAreaElement>,
-    start: number,
-    end: number,
-  ): boolean {
+  function onEditorKeyDown(event: ReactKeyboardEvent, start: number, end: number): boolean {
     const meta = event.metaKey || event.ctrlKey;
 
     if (wikiQuery !== null && suggestions.length > 0) {

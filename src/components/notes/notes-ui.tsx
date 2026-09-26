@@ -19,7 +19,7 @@ export type ShellLayout = "phone" | "tablet" | "desktop";
 type NotesUiValue = {
   searchRef: RefObject<HTMLInputElement | null>;
   titleRef: RefObject<HTMLInputElement | null>;
-  editorRef: RefObject<HTMLTextAreaElement | null>;
+  editorRef: RefObject<HTMLElement | null>;
   findRef: RefObject<HTMLInputElement | null>;
   sidebarOpen: boolean;
   setSidebarOpen: Dispatch<SetStateAction<boolean>>;
@@ -62,7 +62,7 @@ export function NotesUiProvider({
   const filter = useNotesStore((state) => state.filter);
   const searchRef = useRef<HTMLInputElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
-  const editorRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<HTMLElement>(null);
   const findRef = useRef<HTMLInputElement>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);

@@ -2,6 +2,7 @@ import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { findAll, replaceAllMatches, replaceAt, visualCaret } from "@/lib/notes/helpers";
+import { placeCaret } from "@/lib/notes/inline";
 import { useNotesStore } from "@/lib/notes/store";
 import { useNotesUi } from "./notes-ui";
 
@@ -39,13 +40,12 @@ export function FindReplace({ noteId, content }: { noteId: string; content: stri
     if (start === undefined) return;
     const pos = visualCaret(content, start);
     const endPos = visualCaret(content, start + query.length);
-    const el = document.querySelector<HTMLTextAreaElement>(`[data-vellum-line="${pos.line}"]`);
+    const el = document.querySelector<HTMLElement>(`[data-vellum-line="${pos.line}"]`);
     if (!el) {
       editorRef.current?.focus();
       return;
     }
-    el.focus();
-    if (pos.line === endPos.line) el.setSelectionRange(pos.column, endPos.column);
+    if (pos.line === endPos.line) placeCaret(el, pos.column);
     requestAnimationFrame(() => findRef.current?.focus());
   }
 

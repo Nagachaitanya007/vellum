@@ -11,7 +11,7 @@ This repository is a **standalone** app. You do not need Grok, a Grok sandbox, o
 - Folders, pins, tags, daily notes, and a paper writing surface
 - Wiki links (`[[page]]`), backlinks, unlinked mentions, and `![[page]]` embeds
 - Vault graph with configurable node shape, color, size, and arrows
-- Markdown pages or canvas boards
+- Pages for writing, or boards for drawing
 - Canvas: live labels, geometric shapes, 8-handle resize, pen, undo/redo, PNG/JPEG
 - Find and replace, slash commands, command palette, light and dark
 - Google sign-in + Turso: the same vault on every device

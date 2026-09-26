@@ -481,7 +481,7 @@ export function applyLineMarker(
 }
 
 export type VisualLine = {
-  kind: "text" | "bullet" | "todo" | "number" | "image" | "heading" | "quote" | "callout" | "divider";
+  kind: "text" | "bullet" | "todo" | "number" | "image" | "heading" | "quote" | "callout" | "divider" | "embed";
   indent: string;
   marker: string;
   checked: boolean;
@@ -556,6 +556,10 @@ export function splitVisualLines(value: string): VisualLine[] {
     const image = imageSource(raw);
     if (image) {
       return { kind: "image", indent: "", marker: "", checked: false, text: image.alt, raw };
+    }
+    const embed = /^!\[\[([^\]|#]+)\]\]\s*$/.exec(raw);
+    if (embed) {
+      return { kind: "embed", indent: "", marker: "", checked: false, text: embed[1]?.trim() ?? "", raw };
     }
     if (/^(-{3,}|\*{3,}|_{3,})$/.test(raw.trim())) {
       return { kind: "divider", indent: "", marker: "", checked: false, text: "", raw };

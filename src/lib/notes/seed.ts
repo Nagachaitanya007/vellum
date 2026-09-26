@@ -65,10 +65,10 @@ Sign in from the library to keep this vault on your phone and computer. Notes li
 
 - Folders, pins, and a paper page
 - Vault graph in the library
-- Markdown pages or canvas boards — choose when you create
+- Pages for writing, or boards for drawing
 - Find and replace in the page
 - Light and dark
-- \`/\` for blocks, like Notion. Try \`/seq\`, \`/flow\`, \`/math\`, \`/mark\`, \`/today\`
+- Type / at the start of a line for a heading, list, quote, or to-do
 
 Start at [[How linking works]], sketch in [[Rain sketch]], or open [[${today}]].
 
@@ -80,17 +80,15 @@ Start at [[How linking works]], sketch in [[Rain sketch]], or open [[${today}]].
       folderId: "folder-personal",
       createdAt: now - 1000 * 60 * 50,
       updatedAt: now - 1000 * 60 * 50,
-      content: `Type two brackets to reach another page: [[Welcome to Vellum]].
+      content: `Use the Link button, or two brackets, to point at another page: [[Welcome to Vellum]].
 
-Following a missing title creates it. An alias works too: [[Markdown, in brief|the markdown primer]].
+A title that does not exist yet becomes a new page. [[Markdown, in brief|The short guide]] can show different words.
 
-Unlinked mentions (Roam) show under the page — plain text that matches a title, waiting to become a link.
+Words that match a page title, but are not a link yet, show under the page.
 
-Embed a page with \`![[Welcome to Vellum]]\`.
+See also [[Field notes — after rain]].
 
-#writing #links
-
-See also [[Field notes — after rain]].`,
+#writing #links`,
     }),
     page({
       id: "seed-markdown",
@@ -98,15 +96,15 @@ See also [[Field notes — after rain]].`,
       folderId: "folder-reading",
       createdAt: now - 1000 * 60 * 60 * 5,
       updatedAt: now - 1000 * 60 * 60 * 5,
-      content: `Use these marks in the editor. Type \`/\` at the start of a line for Notion-style blocks.
+      content: `Headings, lists, quotes, and links stay on the page. Type / at the start of a line to add one.
 
 ## Headings
 
-\`# Large\` · \`## Section\` · \`### Small\`
+A large line, a section, or a smaller line.
 
 ## Emphasis
 
-**Bold**, *italic*, \`inline code\`, and ~~struck~~.
+**Bold**, *italic*, \`code\`, and ~~struck~~ words.
 
 ## Lists
 
@@ -115,23 +113,16 @@ See also [[Field notes — after rain]].`,
   - Nested
 
 - [x] Done
-- [ ] Next — tick this in preview
+- [ ] Next — tap the box
 
 > [!tip]
-> Callouts start with \`> [!note]\`, \`> [!tip]\`, or \`> [!warn]\`.
+> A callout is a note set apart from the page.
 
 ## Quote
 
 > Keep the measure short. The page should feel like paper, not a dashboard.
 
-A wiki link: [[How linking works]].
-
-Type \`/\` then seq, flow, math, mark, or today.
-
-\`\`\`seq
-Ada->Grace: Compile
-Grace-->Ada: Ship
-\`\`\`
+A link: [[How linking works]].
 
 ==Keep the important line==
 
@@ -175,7 +166,7 @@ Related: [[Welcome to Vellum]] and the method in [[How linking works]].
       folderId: "folder-work",
       createdAt: now - 1000 * 60 * 60 * 30,
       updatedAt: now - 1000 * 60 * 60 * 3,
-      content: `Ship the quiet things. Tick them off in preview.
+      content: `Ship the quiet things. Tick them off as you go.
 
 - [x] Read [[How linking works]]
 - [ ] File yesterday into [[Field notes — after rain]]
